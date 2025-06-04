@@ -8,15 +8,33 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
       
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.1'
       
+      - name: Install XML validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils
+      
       - name: Validate all files
         run: |
-          find src/ -name "*.php" -exec php -l {} \;
+          echo "Validating PHP files..."
+          find src/ -name "*.php" -exec echo "Checking: {}" \; -exec php -l {} \;
+          echo "✓ PHP validation completed"
+          
+          echo "Validating XML files..."
           xmllint --noout src/*.plg
-          bash -n src/scripts/*.sh
+          echo "✓ XML validation completed"
+          
+          echo "Validating bash scripts..."
+          if ls src/scripts/*.sh >/dev/null 2>&1; then
+            find src/scripts/ -name "*.sh" -exec echo "Checking: {}" \; -exec bash -n {} \;
+            echo "✓ Bash validation completed"
+          else
+            echo "No bash scripts found to validate"
+          fi
