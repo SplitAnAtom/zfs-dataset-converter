@@ -1,536 +1,125 @@
-Menu="Utilities"
-Title="ZFS Dataset Converter"
-Icon="icon-database"
----
-<?PHP
-/* Copyright 2025, Split An Atom.
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License version 2,
- * as published by the Free Software Foundation.
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- */
+<?xml version='1.0' standalone='yes'?>
+<PLUGIN name="zfs.dataset.converter" author="Split An Atom" version="2025.01.04" 
+        category="Utilities" support="https://github.com/SplitAnAtom/zfs-dataset-converter/issues"
+        pluginURL="https://github.com/SplitAnAtom/zfs-dataset-converter/releases/latest/download/zfs.dataset.converter.plg"
+        icon="fa-database">
 
-$plugin = "zfs.dataset.converter";
-$config_file = "/boot/config/plugins/$plugin/settings.cfg";
-$status_file = "/tmp/zfs_converter_status.json";
+<CHANGES>
+##ZFS Dataset Converter
 
-// Load current settings
-$config = [];
-if (file_exists($config_file)) {
-    $lines = file($config_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    foreach ($lines as $line) {
-        if (strpos($line, '=') !== false && substr($line, 0, 1) !== '#') {
-            list($key, $value) = explode('=', $line, 2);
-            $config[trim($key)] = trim($value, '"');
-        }
-    }
-}
+###2025.01.04a
+- Fixed plugin GUI loading issues
+- Fixed icon display in plugin list
+- Added debugging capabilities
+- Simplified initial installation
 
-// Default values
-$config = array_merge([
-    'DRY_RUN' => 'no',
-    'CLEANUP' => 'yes',
-    'REPLACE_SPACES' => 'no',
-    'ENABLE_NOTIFICATIONS' => 'yes',
-    'NOTIFY_SCRIPT_START' => 'yes',
-    'NOTIFY_SCRIPT_COMPLETION' => 'yes',
-    'NOTIFY_CONVERSION_SUMMARY' => 'yes',
-    'NOTIFY_ERRORS' => 'yes',
-    'NOTIFY_WARNINGS' => 'yes',
-    'NOTIFY_RESUME_OPERATIONS' => 'yes',
-    'NOTIFY_CONTAINER_VM_STOPS' => 'yes',
-    'NOTIFY_SPACE_ISSUES' => 'yes',
-    'SHOULD_PROCESS_CONTAINERS' => 'no',
-    'SOURCE_POOL_WHERE_APPDATA_IS' => 'cache',
-    'SOURCE_DATASET_WHERE_APPDATA_IS' => 'appdata',
-    'SHOULD_PROCESS_VMS' => 'no',
-    'SOURCE_POOL_WHERE_VM_DOMAINS_ARE' => 'cache',
-    'SOURCE_DATASET_WHERE_VM_DOMAINS_ARE' => 'domains',
-    'VM_FORCESHUTDOWN_WAIT' => '90',
-    'BUFFER_ZONE' => '11',
-    'SOURCE_DATASETS' => ''
-], $config);
+###2025.01.04
+- Updated copyright to 2025, Split An Atom
+- Enhanced GUI integration with Unraid styling system
+- Improved theme compatibility (dark/light mode support)
+- Fixed white background and readability issues
 
-// Get current status
-$status = ['status' => 'idle', 'message' => 'Ready for conversion'];
-if (file_exists($status_file)) {
-    $status_data = file_get_contents($status_file);
-    if ($status_data) {
-        $parsed_status = json_decode($status_data, true);
-        if ($parsed_status) {
-            $status = $parsed_status;
-        }
-    }
-}
-?>
+###2024.06.04
+- Initial release with full GUI interface
+- Resume interrupted conversions automatically
+- Intelligent validation system (no false failures)
+- Configurable Unraid notifications for all operations
+- Real-time progress monitoring and live logs
+- Container and VM management during conversion
+- Special character handling for dataset names
+- Comprehensive space checking and warnings
+</CHANGES>
 
-<script>
-$(function() {
-    // Auto-refresh status every 5 seconds
-    setInterval(function() {
-        $.get('/plugins/<?=$plugin?>/scripts/get_status.php', function(data) {
-            try {
-                updateStatus(JSON.parse(data));
-            } catch(e) {
-                console.log('Status update error:', e);
-            }
-        }).fail(function() {
-            console.log('Status update failed');
-        });
-    }, 5000);
+<FILE Run="/bin/bash">
+<INLINE>
+<![CDATA[
+echo "Installing ZFS Dataset Converter plugin..."
+
+# Create plugin directories
+mkdir -p /usr/local/emhttp/plugins/zfs.dataset.converter
+mkdir -p /usr/local/emhttp/plugins/zfs.dataset.converter/scripts
+mkdir -p /boot/config/plugins/zfs.dataset.converter
+
+# Download and extract plugin files
+cd /tmp
+echo "Downloading plugin files..."
+wget -O plugin-files.tar.gz "https://github.com/SplitAnAtom/zfs-dataset-converter/releases/latest/download/plugin-files.tar.gz" 2>/dev/null
+
+if [ $? -eq 0 ] && [ -f plugin-files.tar.gz ]; then
+    echo "Extracting plugin files..."
+    tar -xzf plugin-files.tar.gz -C /usr/local/emhttp/plugins/zfs.dataset.converter/
     
-    // Show/hide dependent settings
-    $('#process_containers').change(function() {
-        if ($(this).val() === 'yes') {
-            $('#container_settings').show();
-        } else {
-            $('#container_settings').hide();
-        }
-    }).trigger('change');
+    # Set proper permissions
+    chmod +x /usr/local/emhttp/plugins/zfs.dataset.converter/scripts/*.sh 2>/dev/null
+    chmod +x /usr/local/emhttp/plugins/zfs.dataset.converter/scripts/*.php 2>/dev/null
     
-    $('#process_vms').change(function() {
-        if ($(this).val() === 'yes') {
-            $('#vm_settings').show();
-        } else {
-            $('#vm_settings').hide();
-        }
-    }).trigger('change');
-    
-    $('#enable_notifications').change(function() {
-        if ($(this).val() === 'yes') {
-            $('#notification_details').show();
-        } else {
-            $('#notification_details').hide();
-        }
-    }).trigger('change');
-});
+    echo "Plugin files installed successfully"
+else
+    echo "Warning: Could not download plugin files from GitHub releases"
+    echo "Plugin will install with basic functionality only"
+fi
 
-function updateStatus(status) {
-    $('#status_text').text(status.message || 'Ready for conversion');
-    
-    var indicator = $('#status_indicator');
-    indicator.removeClass('status-idle status-running status-warning status-error');
-    
-    switch(status.status) {
-        case 'running':
-            indicator.addClass('status-running');
-            $('#progress_section').show();
-            break;
-        case 'warning':
-            indicator.addClass('status-warning');
-            break;
-        case 'error':
-            indicator.addClass('status-error');
-            break;
-        default:
-            indicator.addClass('status-idle');
-            $('#progress_section').hide();
-    }
-    
-    if (status.progress) {
-        $('#progress_bar').val(status.progress);
-        $('#progress_text').text(status.progress + '%');
-    }
-}
+# Create default settings file if it doesn't exist
+if [ ! -f /boot/config/plugins/zfs.dataset.converter/settings.cfg ]; then
+echo "Creating default configuration..."
+cat > /boot/config/plugins/zfs.dataset.converter/settings.cfg << 'EOFCFG'
+# ZFS Dataset Converter Configuration
+# Generated on $(date)
 
-function startConversion() {
-    var isDryRun = $('input[name="DRY_RUN"]:checked').val() === 'yes';
-    
-    if (isDryRun) {
-        if (!confirm('Start conversion in DRY RUN mode? No actual changes will be made.')) return;
-    } else {
-        if (!confirm('Start LIVE conversion? This will modify your filesystem!\n\nEnsure you have backups and adequate free space.')) return;
-    }
-    
-    $('#start_button').prop('disabled', true).text('Starting...');
-    
-    $.post('/plugins/<?=$plugin?>/scripts/start_conversion.php', 
-           $('#converter_form').serialize())
-     .done(function(response) {
-         try {
-             var result = JSON.parse(response);
-             if (result.success) {
-                 $('#status_text').text('Conversion started successfully');
-                 $('#log_section').show();
-                 if (result.log_file) {
-                     startLogTail(result.log_file);
-                 }
-             } else {
-                 alert('Error starting conversion: ' + result.error);
-                 $('#start_button').prop('disabled', false).text('Start Conversion');
-             }
-         } catch(e) {
-             alert('Error parsing response: ' + e.message);
-             $('#start_button').prop('disabled', false).text('Start Conversion');
-         }
-     })
-     .fail(function() {
-         alert('Failed to start conversion. Check plugin installation.');
-         $('#start_button').prop('disabled', false).text('Start Conversion');
-     });
-}
+DRY_RUN="no"
+CLEANUP="yes"
+REPLACE_SPACES="no"
+ENABLE_NOTIFICATIONS="yes"
+NOTIFY_SCRIPT_START="yes"
+NOTIFY_SCRIPT_COMPLETION="yes"
+NOTIFY_CONVERSION_SUMMARY="yes"
+NOTIFY_ERRORS="yes"
+NOTIFY_WARNINGS="yes"
+NOTIFY_RESUME_OPERATIONS="yes"
+NOTIFY_CONTAINER_VM_STOPS="yes"
+NOTIFY_SPACE_ISSUES="yes"
+SHOULD_PROCESS_CONTAINERS="no"
+SOURCE_POOL_WHERE_APPDATA_IS="cache"
+SOURCE_DATASET_WHERE_APPDATA_IS="appdata"
+SHOULD_PROCESS_VMS="no"
+SOURCE_POOL_WHERE_VM_DOMAINS_ARE="cache"
+SOURCE_DATASET_WHERE_VM_DOMAINS_ARE="domains"
+VM_FORCESHUTDOWN_WAIT="90"
+BUFFER_ZONE="11"
+SOURCE_DATASETS=""
+EOFCFG
+fi
 
-function scanFolders() {
-    $('#scan_results').html('<i class="fa fa-spinner fa-spin"></i> Scanning for convertible folders...').show();
-    
-    $.post('/plugins/<?=$plugin?>/scripts/scan_folders.php',
-           $('#converter_form').serialize())
-     .done(function(response) {
-         $('#scan_results').html(response);
-     })
-     .fail(function() {
-         $('#scan_results').html('<div style="color: red;">Error: Could not scan folders. Check plugin installation.</div>');
-     });
-}
+# Verify installation
+if [ -f /usr/local/emhttp/plugins/zfs.dataset.converter/ZFSConverter.page ]; then
+    echo "✓ ZFS Dataset Converter plugin installed successfully"
+    echo "✓ Access via: Settings → Utilities → ZFS Dataset Converter"
+else
+    echo "⚠ Plugin installation may be incomplete"
+    echo "Check: https://github.com/SplitAnAtom/zfs-dataset-converter/releases"
+fi
+]]>
+</INLINE>
+</FILE>
 
-function startLogTail(logFile) {
-    var logInterval = setInterval(function() {
-        $.get('/plugins/<?=$plugin?>/scripts/get_logs.php?file=' + encodeURIComponent(logFile))
-         .done(function(logs) {
-             $('#log_content').html(logs);
-             $('#log_content').scrollTop($('#log_content')[0].scrollHeight);
-         });
-    }, 2000);
-    
-    // Store interval ID for potential cleanup
-    window.logTailInterval = logInterval;
-}
+<FILE Run="/bin/bash" Method="remove">
+<INLINE>
+<![CDATA[
+echo "Removing ZFS Dataset Converter plugin..."
 
-function saveSettings() {
-    $.post('/plugins/<?=$plugin?>/scripts/save_settings.php',
-           $('#converter_form').serialize())
-     .done(function(response) {
-         alert('Settings saved successfully!');
-     })
-     .fail(function() {
-         alert('Error saving settings!');
-     });
-}
-</script>
+# Stop any running processes
+pkill -f "zfs_converter" 2>/dev/null
 
-<style>
-/* Status indicators */
-.status-indicator {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    margin-right: 8px;
-}
-.status-idle { background-color: #888; }
-.status-running { 
-    background-color: #0a84ff; 
-    animation: pulse 1.5s infinite; 
-}
-.status-warning { background-color: #ff9500; }
-.status-error { background-color: #ff3b30; }
+# Remove plugin files
+rm -rf /usr/local/emhttp/plugins/zfs.dataset.converter
 
-@keyframes pulse {
-    0% { opacity: 1; }
-    50% { opacity: 0.5; }
-    100% { opacity: 1; }
-}
+# Note: We keep the configuration in /boot/config/plugins/zfs.dataset.converter
+# so user settings are preserved if they reinstall
 
-/* Log display */
-#log_content {
-    background-color: #1a1a1a;
-    color: #00ff41;
-    font-family: 'Courier New', monospace;
-    font-size: 12px;
-    padding: 15px;
-    height: 400px;
-    overflow-y: auto;
-    border: 1px solid #333;
-    border-radius: 4px;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-}
+echo "ZFS Dataset Converter plugin removed successfully"
+echo "(Configuration files preserved in /boot/config/plugins/zfs.dataset.converter/)"
+]]>
+</INLINE>
+</FILE>
 
-/* Subsection styling */
-.subsetting {
-    margin-left: 25px;
-    padding-left: 15px;
-    border-left: 2px solid #0a84ff;
-    margin-top: 10px;
-}
-
-/* Button spacing */
-.action-buttons button {
-    margin-right: 10px;
-    margin-bottom: 10px;
-}
-
-/* Scan results */
-#scan_results {
-    margin-top: 15px;
-    padding: 15px;
-    border: 1px solid #333;
-    border-radius: 4px;
-    background-color: rgba(0,0,0,0.1);
-}
-
-#scan_results table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 10px;
-}
-
-#scan_results th,
-#scan_results td {
-    padding: 8px 12px;
-    text-align: left;
-    border-bottom: 1px solid #333;
-}
-
-#scan_results th {
-    font-weight: bold;
-    background-color: rgba(0,0,0,0.2);
-}
-
-/* Progress section */
-.progress-section {
-    margin: 15px 0;
-    padding: 15px;
-    border: 1px solid #333;
-    border-radius: 4px;
-    background-color: rgba(0,0,0,0.1);
-}
-
-.progress-section progress {
-    width: 100%;
-    height: 20px;
-    margin: 10px 0;
-}
-</style>
-
-<form id="converter_form" method="POST">
-
-<!-- Status Section -->
-<table class="settings">
-<tr>
-<td colspan="2">
-    <strong><i class="fa fa-tachometer"></i> Current Status</strong>
-</td>
-</tr>
-<tr>
-<td colspan="2">
-    <div style="margin-bottom: 15px;">
-        <span id="status_indicator" class="status-indicator status-idle"></span>
-        <span id="status_text"><?= htmlspecialchars($status['message']) ?></span>
-    </div>
-    
-    <div id="progress_section" class="progress-section" style="display: none;">
-        <div><strong>Conversion Progress</strong></div>
-        <progress id="progress_bar" value="0" max="100"></progress>
-        <div id="progress_text">0%</div>
-    </div>
-</td>
-</tr>
-</table>
-
-<!-- Basic Settings -->
-<table class="settings">
-<tr>
-<td colspan="2">
-    <strong><i class="fa fa-cogs"></i> Basic Settings</strong>
-</td>
-</tr>
-
-<tr>
-<td>Run Mode:</td>
-<td>
-    <label><input type="radio" name="DRY_RUN" value="yes" <?= $config['DRY_RUN'] == 'yes' ? 'checked' : '' ?>> Dry Run (Test Mode - No Changes)</label><br>
-    <label><input type="radio" name="DRY_RUN" value="no" <?= $config['DRY_RUN'] == 'no' ? 'checked' : '' ?>> Live Run (Make Actual Changes)</label>
-</td>
-</tr>
-
-<tr>
-<td>Enable Cleanup:</td>
-<td>
-    <select name="CLEANUP">
-        <option value="yes" <?= $config['CLEANUP'] == 'yes' ? 'selected' : '' ?>>Yes - Automatically remove temp directories after validation</option>
-        <option value="no" <?= $config['CLEANUP'] == 'no' ? 'selected' : '' ?>>No - Keep temp directories for manual inspection</option>
-    </select>
-</td>
-</tr>
-
-<tr>
-<td>Replace Spaces:</td>
-<td>
-    <select name="REPLACE_SPACES">
-        <option value="no" <?= $config['REPLACE_SPACES'] == 'no' ? 'selected' : '' ?>>No - Keep spaces in folder names</option>
-        <option value="yes" <?= $config['REPLACE_SPACES'] == 'yes' ? 'selected' : '' ?>>Yes - Replace spaces with underscores</option>
-    </select>
-</td>
-</tr>
-
-<tr>
-<td>Buffer Zone:</td>
-<td>
-    <input type="number" name="BUFFER_ZONE" value="<?= htmlspecialchars($config['BUFFER_ZONE']) ?>" min="5" max="50" style="width: 80px;">%
-    <span style="color: #999; font-size: 12px;">Extra space required above folder size (recommended: 11%)</span>
-</td>
-</tr>
-</table>
-
-<!-- Source Configuration -->
-<table class="settings">
-<tr>
-<td colspan="2">
-    <strong><i class="fa fa-folder"></i> Source Configuration</strong>
-</td>
-</tr>
-
-<tr>
-<td>Process Docker Containers:</td>
-<td>
-    <select name="SHOULD_PROCESS_CONTAINERS" id="process_containers">
-        <option value="no" <?= $config['SHOULD_PROCESS_CONTAINERS'] == 'no' ? 'selected' : '' ?>>No</option>
-        <option value="yes" <?= $config['SHOULD_PROCESS_CONTAINERS'] == 'yes' ? 'selected' : '' ?>>Yes</option>
-    </select>
-    <span style="color: #999; font-size: 12px;">Convert Docker appdata folders to datasets</span>
-</td>
-</tr>
-
-<tr id="container_settings" style="display: none;">
-<td colspan="2">
-    <div class="subsetting">
-        <table>
-            <tr>
-                <td style="width: 150px;">Appdata Pool:</td>
-                <td><input type="text" name="SOURCE_POOL_WHERE_APPDATA_IS" value="<?= htmlspecialchars($config['SOURCE_POOL_WHERE_APPDATA_IS']) ?>" placeholder="e.g., cache"></td>
-            </tr>
-            <tr>
-                <td>Appdata Dataset:</td>
-                <td><input type="text" name="SOURCE_DATASET_WHERE_APPDATA_IS" value="<?= htmlspecialchars($config['SOURCE_DATASET_WHERE_APPDATA_IS']) ?>" placeholder="e.g., appdata"></td>
-            </tr>
-        </table>
-    </div>
-</td>
-</tr>
-
-<tr>
-<td>Process Virtual Machines:</td>
-<td>
-    <select name="SHOULD_PROCESS_VMS" id="process_vms">
-        <option value="no" <?= $config['SHOULD_PROCESS_VMS'] == 'no' ? 'selected' : '' ?>>No</option>
-        <option value="yes" <?= $config['SHOULD_PROCESS_VMS'] == 'yes' ? 'selected' : '' ?>>Yes</option>
-    </select>
-    <span style="color: #999; font-size: 12px;">Convert VM vdisk folders to datasets</span>
-</td>
-</tr>
-
-<tr id="vm_settings" style="display: none;">
-<td colspan="2">
-    <div class="subsetting">
-        <table>
-            <tr>
-                <td style="width: 150px;">VM Pool:</td>
-                <td><input type="text" name="SOURCE_POOL_WHERE_VM_DOMAINS_ARE" value="<?= htmlspecialchars($config['SOURCE_POOL_WHERE_VM_DOMAINS_ARE']) ?>" placeholder="e.g., cache"></td>
-            </tr>
-            <tr>
-                <td>VM Dataset:</td>
-                <td><input type="text" name="SOURCE_DATASET_WHERE_VM_DOMAINS_ARE" value="<?= htmlspecialchars($config['SOURCE_DATASET_WHERE_VM_DOMAINS_ARE']) ?>" placeholder="e.g., domains"></td>
-            </tr>
-            <tr>
-                <td>Force Shutdown Wait:</td>
-                <td>
-                    <input type="number" name="VM_FORCESHUTDOWN_WAIT" value="<?= htmlspecialchars($config['VM_FORCESHUTDOWN_WAIT']) ?>" min="30" max="300" style="width: 80px;"> seconds
-                    <span style="color: #999; font-size: 12px;">Time to wait before force-stopping VMs</span>
-                </td>
-            </tr>
-        </table>
-    </div>
-</td>
-</tr>
-
-<tr>
-<td>Additional Datasets:</td>
-<td>
-    <textarea name="SOURCE_DATASETS" rows="4" cols="50" placeholder="disk12&#10;tank/media&#10;backup/photos"><?= htmlspecialchars($config['SOURCE_DATASETS']) ?></textarea><br>
-    <span style="color: #999; font-size: 12px;">One dataset path per line (e.g., pool/dataset)</span>
-</td>
-</tr>
-</table>
-
-<!-- Notification Settings -->
-<table class="settings">
-<tr>
-<td colspan="2">
-    <strong><i class="fa fa-bell"></i> Notification Settings</strong>
-</td>
-</tr>
-
-<tr>
-<td>Enable Notifications:</td>
-<td>
-    <select name="ENABLE_NOTIFICATIONS" id="enable_notifications">
-        <option value="yes" <?= $config['ENABLE_NOTIFICATIONS'] == 'yes' ? 'selected' : '' ?>>Yes</option>
-        <option value="no" <?= $config['ENABLE_NOTIFICATIONS'] == 'no' ? 'selected' : '' ?>>No</option>
-    </select>
-</td>
-</tr>
-
-<tr id="notification_details">
-<td colspan="2">
-    <div class="subsetting">
-        <table>
-            <tr><td style="width: 200px;">Script Start/Completion:</td><td><select name="NOTIFY_SCRIPT_START"><option value="yes" <?= $config['NOTIFY_SCRIPT_START'] == 'yes' ? 'selected' : '' ?>>Yes</option><option value="no" <?= $config['NOTIFY_SCRIPT_START'] == 'no' ? 'selected' : '' ?>>No</option></select></td></tr>
-            <tr><td>Conversion Summary:</td><td><select name="NOTIFY_CONVERSION_SUMMARY"><option value="yes" <?= $config['NOTIFY_CONVERSION_SUMMARY'] == 'yes' ? 'selected' : '' ?>>Yes</option><option value="no" <?= $config['NOTIFY_CONVERSION_SUMMARY'] == 'no' ? 'selected' : '' ?>>No</option></select></td></tr>
-            <tr><td>Errors & Failures:</td><td><select name="NOTIFY_ERRORS"><option value="yes" <?= $config['NOTIFY_ERRORS'] == 'yes' ? 'selected' : '' ?>>Yes</option><option value="no" <?= $config['NOTIFY_ERRORS'] == 'no' ? 'selected' : '' ?>>No</option></select></td></tr>
-            <tr><td>Warnings:</td><td><select name="NOTIFY_WARNINGS"><option value="yes" <?= $config['NOTIFY_WARNINGS'] == 'yes' ? 'selected' : '' ?>>Yes</option><option value="no" <?= $config['NOTIFY_WARNINGS'] == 'no' ? 'selected' : '' ?>>No</option></select></td></tr>
-            <tr><td>Container/VM Operations:</td><td><select name="NOTIFY_CONTAINER_VM_STOPS"><option value="yes" <?= $config['NOTIFY_CONTAINER_VM_STOPS'] == 'yes' ? 'selected' : '' ?>>Yes</option><option value="no" <?= $config['NOTIFY_CONTAINER_VM_STOPS'] == 'no' ? 'selected' : '' ?>>No</option></select></td></tr>
-            <tr><td>Space Issues:</td><td><select name="NOTIFY_SPACE_ISSUES"><option value="yes" <?= $config['NOTIFY_SPACE_ISSUES'] == 'yes' ? 'selected' : '' ?>>Yes</option><option value="no" <?= $config['NOTIFY_SPACE_ISSUES'] == 'no' ? 'selected' : '' ?>>No</option></select></td></tr>
-            <tr><td>Resume Operations:</td><td><select name="NOTIFY_RESUME_OPERATIONS"><option value="yes" <?= $config['NOTIFY_RESUME_OPERATIONS'] == 'yes' ? 'selected' : '' ?>>Yes</option><option value="no" <?= $config['NOTIFY_RESUME_OPERATIONS'] == 'no' ? 'selected' : '' ?>>No</option></select></td></tr>
-        </table>
-    </div>
-</td>
-</tr>
-</table>
-
-<!-- Actions -->
-<table class="settings">
-<tr>
-<td colspan="2">
-    <strong><i class="fa fa-play"></i> Actions</strong>
-</td>
-</tr>
-<tr>
-<td colspan="2">
-    <div class="action-buttons">
-        <button type="button" id="start_button" onclick="startConversion()">
-            <i class="fa fa-play"></i> Start Conversion
-        </button>
-        
-        <button type="button" onclick="scanFolders()">
-            <i class="fa fa-search"></i> Scan for Convertible Folders
-        </button>
-        
-        <button type="button" onclick="saveSettings()">
-            <i class="fa fa-save"></i> Save Settings
-        </button>
-    </div>
-    
-    <div id="scan_results" style="display: none;"></div>
-</td>
-</tr>
-</table>
-
-<!-- Live Log Section -->
-<table class="settings" id="log_section" style="display: none;">
-<tr>
-<td colspan="2">
-    <strong><i class="fa fa-terminal"></i> Live Conversion Log</strong>
-</td>
-</tr>
-<tr>
-<td colspan="2">
-    <div id="log_content"></div>
-</td>
-</tr>
-</table>
-
-</form>
+</PLUGIN>
