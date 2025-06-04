@@ -1,10 +1,16 @@
 <?xml version='1.0' standalone='yes'?>
-<PLUGIN name="zfs.dataset.converter" author="Hammy Havoc" version="2024.06.04" 
+<PLUGIN name="zfs.dataset.converter" author="Split An Atom" version="2025.01.04" 
         category="Utilities" support="https://forums.unraid.net/topic/xxxxx"
-        pluginURL="https://github.com/HammyHavoc/zfs-dataset-converter/releases/latest/download/zfs.dataset.converter.plg">
+        pluginURL="https://github.com/SplitAnAtom/zfs-dataset-converter/releases/latest/download/zfs.dataset.converter.plg">
 
 <CHANGES>
 ##ZFS Dataset Converter
+
+###2025.01.04
+- Updated copyright to 2025, Split An Atom
+- Enhanced GUI integration with Unraid styling system
+- Improved theme compatibility (dark/light mode support)
+- Fixed white background and readability issues
 
 ###2024.06.04
 - Initial release with full GUI interface
@@ -24,7 +30,7 @@ mkdir -p /usr/local/emhttp/plugins/zfs.dataset.converter
 mkdir -p /boot/config/plugins/zfs.dataset.converter
 
 cd /tmp
-wget -O plugin-files.tar.gz "https://github.com/HammyHavoc/zfs-dataset-converter/releases/latest/download/plugin-files.tar.gz"
+wget -O plugin-files.tar.gz "https://github.com/SplitAnAtom/zfs-dataset-converter/releases/latest/download/plugin-files.tar.gz"
 tar -xzf plugin-files.tar.gz -C /usr/local/emhttp/plugins/zfs.dataset.converter/
 
 chmod +x /usr/local/emhttp/plugins/zfs.dataset.converter/scripts/*.sh
