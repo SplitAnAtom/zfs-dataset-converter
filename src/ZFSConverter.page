@@ -88,21 +88,21 @@ function updateStatus(status) {
     $('#status_text').text(status.message || 'Ready for conversion');
     
     var indicator = $('#status_indicator');
-    indicator.removeClass('idle running warning error');
+    indicator.removeClass('status-idle status-running status-warning status-error');
     
     switch(status.status) {
         case 'running':
-            indicator.addClass('running');
+            indicator.addClass('status-running');
             $('#progress_section').show();
             break;
         case 'warning':
-            indicator.addClass('warning');
+            indicator.addClass('status-warning');
             break;
         case 'error':
-            indicator.addClass('error');
+            indicator.addClass('status-error');
             break;
         default:
-            indicator.addClass('idle');
+            indicator.addClass('status-idle');
             $('#progress_section').hide();
     }
     
@@ -173,190 +173,266 @@ function saveSettings() {
 </script>
 
 <style>
+/* Status indicators using Unraid color scheme */
 .status-indicator {
     display: inline-block;
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     margin-right: 8px;
 }
-.status-indicator.idle { background: #6c757d; }
-.status-indicator.running { background: #28a745; }
-.status-indicator.warning { background: #ffc107; }
-.status-indicator.error { background: #dc3545; }
+.status-idle { background-color: #888; }
+.status-running { background-color: #0a84ff; animation: pulse 1.5s infinite; }
+.status-warning { background-color: #ff9500; }
+.status-error { background-color: #ff3b30; }
 
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+/* Log display using terminal styling */
 #log_content {
-    background: #000;
-    color: #00ff00;
-    font-family: monospace;
-    padding: 10px;
+    background-color: #1a1a1a;
+    color: #00ff41;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    padding: 15px;
     height: 400px;
-    overflow-y: scroll;
+    overflow-y: auto;
+    border: 1px solid #333;
     border-radius: 4px;
     white-space: pre-wrap;
+    word-wrap: break-word;
 }
 
-.setting-group {
-    border: 1px solid #ddd;
-    border-radius: 4px;
+/* Subtle styling for nested settings */
+.subsetting {
+    margin-left: 25px;
+    padding-left: 15px;
+    border-left: 2px solid #0a84ff;
+    margin-top: 10px;
+}
+
+/* Button spacing */
+.action-buttons button {
+    margin-right: 10px;
+    margin-bottom: 10px;
+}
+
+/* Scan results styling */
+#scan_results {
+    margin-top: 15px;
     padding: 15px;
-    margin: 10px 0;
-    background: #f9f9f9;
-}
-
-.setting-group h3 {
-    margin-top: 0;
-    color: #333;
-}
-
-.progress-container {
-    background: #fff;
-    border: 1px solid #ddd;
+    border: 1px solid #333;
     border-radius: 4px;
-    padding: 15px;
+    background-color: rgba(0,0,0,0.1);
+}
+
+#scan_results table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+#scan_results th,
+#scan_results td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #333;
+}
+
+#scan_results th {
+    font-weight: bold;
+    background-color: rgba(0,0,0,0.2);
+}
+
+/* Progress section */
+.progress-section {
     margin: 15px 0;
+    padding: 15px;
+    border: 1px solid #333;
+    border-radius: 4px;
+    background-color: rgba(0,0,0,0.1);
+}
+
+.progress-section progress {
+    width: 100%;
+    height: 20px;
+    margin: 10px 0;
 }
 </style>
 
 <form id="converter_form" method="POST">
 
 <!-- Status Section -->
-<div class="setting-group">
-    <h3><i class="fa fa-tachometer"></i> Current Status</h3>
+<table class="settings">
+<tr><td colspan="2" style="text-align: left;">
+    <span class="title" style="font-size: 18px; font-weight: bold;">
+        <i class="fa fa-tachometer" style="margin-right: 8px;"></i>Current Status
+    </span>
+</td></tr>
+<tr><td colspan="2">
     <div style="margin-bottom: 15px;">
-        <span id="status_indicator" class="status-indicator idle"></span>
+        <span id="status_indicator" class="status-indicator status-idle"></span>
         <span id="status_text"><?= htmlspecialchars($status['message']) ?></span>
     </div>
     
-    <div id="progress_section" style="display: none;">
-        <div class="progress-container">
-            <div><strong>Conversion Progress</strong></div>
-            <progress id="progress_bar" value="0" max="100" style="width: 100%; height: 20px;"></progress>
-            <div id="progress_text">0%</div>
-        </div>
+    <div id="progress_section" class="progress-section" style="display: none;">
+        <div><strong>Conversion Progress</strong></div>
+        <progress id="progress_bar" value="0" max="100"></progress>
+        <div id="progress_text">0%</div>
     </div>
-</div>
+</td></tr>
+</table>
 
 <!-- Basic Settings -->
-<div class="setting-group">
-    <h3><i class="fa fa-cogs"></i> Basic Settings</h3>
-    
-    <dl>
-        <dt>Run Mode:</dt>
-        <dd>
-            <label><input type="radio" name="DRY_RUN" value="yes" <?= $config['DRY_RUN'] == 'yes' ? 'checked' : '' ?> id="dry_run"> Dry Run (Test Mode - No Changes)</label><br>
-            <label><input type="radio" name="DRY_RUN" value="no" <?= $config['DRY_RUN'] == 'no' ? 'checked' : '' ?>> Live Run (Make Actual Changes)</label>
-        </dd>
-    </dl>
-    
-    <dl>
-        <dt>Enable Cleanup:</dt>
-        <dd>
-            <select name="CLEANUP">
-                <option value="yes" <?= $config['CLEANUP'] == 'yes' ? 'selected' : '' ?>>Yes - Automatically remove temp directories after validation</option>
-                <option value="no" <?= $config['CLEANUP'] == 'no' ? 'selected' : '' ?>>No - Keep temp directories for manual inspection</option>
-            </select>
-        </dd>
-    </dl>
-    
-    <dl>
-        <dt>Replace Spaces:</dt>
-        <dd>
-            <select name="REPLACE_SPACES">
-                <option value="no" <?= $config['REPLACE_SPACES'] == 'no' ? 'selected' : '' ?>>No - Keep spaces in folder names</option>
-                <option value="yes" <?= $config['REPLACE_SPACES'] == 'yes' ? 'selected' : '' ?>>Yes - Replace spaces with underscores</option>
-            </select>
-        </dd>
-    </dl>
-    
-    <dl>
-        <dt>Buffer Zone:</dt>
-        <dd>
-            <input type="number" name="BUFFER_ZONE" value="<?= htmlspecialchars($config['BUFFER_ZONE']) ?>" min="5" max="50" style="width: 80px;">%
-            <span class="text-muted">Extra space required above folder size (recommended: 11%)</span>
-        </dd>
-    </dl>
-</div>
+<table class="settings">
+<tr><td colspan="2" style="text-align: left;">
+    <span class="title" style="font-size: 18px; font-weight: bold;">
+        <i class="fa fa-cogs" style="margin-right: 8px;"></i>Basic Settings
+    </span>
+</td></tr>
+
+<tr>
+<td>Run Mode:</td>
+<td>
+    <label><input type="radio" name="DRY_RUN" value="yes" <?= $config['DRY_RUN'] == 'yes' ? 'checked' : '' ?> id="dry_run"> Dry Run (Test Mode - No Changes)</label><br>
+    <label><input type="radio" name="DRY_RUN" value="no" <?= $config['DRY_RUN'] == 'no' ? 'checked' : '' ?>> Live Run (Make Actual Changes)</label>
+</td>
+</tr>
+
+<tr>
+<td>Enable Cleanup:</td>
+<td>
+    <select name="CLEANUP">
+        <option value="yes" <?= $config['CLEANUP'] == 'yes' ? 'selected' : '' ?>>Yes - Automatically remove temp directories after validation</option>
+        <option value="no" <?= $config['CLEANUP'] == 'no' ? 'selected' : '' ?>>No - Keep temp directories for manual inspection</option>
+    </select>
+</td>
+</tr>
+
+<tr>
+<td>Replace Spaces:</td>
+<td>
+    <select name="REPLACE_SPACES">
+        <option value="no" <?= $config['REPLACE_SPACES'] == 'no' ? 'selected' : '' ?>>No - Keep spaces in folder names</option>
+        <option value="yes" <?= $config['REPLACE_SPACES'] == 'yes' ? 'selected' : '' ?>>Yes - Replace spaces with underscores</option>
+    </select>
+</td>
+</tr>
+
+<tr>
+<td>Buffer Zone:</td>
+<td>
+    <input type="number" name="BUFFER_ZONE" value="<?= htmlspecialchars($config['BUFFER_ZONE']) ?>" min="5" max="50" style="width: 80px;">%
+    <span style="color: #999; font-size: 12px;">Extra space required above folder size (recommended: 11%)</span>
+</td>
+</tr>
+</table>
 
 <!-- Source Configuration -->
-<div class="setting-group">
-    <h3><i class="fa fa-folder"></i> Source Configuration</h3>
-    
-    <dl>
-        <dt>Process Docker Containers:</dt>
-        <dd>
-            <select name="SHOULD_PROCESS_CONTAINERS" id="process_containers">
-                <option value="no" <?= $config['SHOULD_PROCESS_CONTAINERS'] == 'no' ? 'selected' : '' ?>>No</option>
-                <option value="yes" <?= $config['SHOULD_PROCESS_CONTAINERS'] == 'yes' ? 'selected' : '' ?>>Yes</option>
-            </select>
-            <span class="text-muted">Convert Docker appdata folders to datasets</span>
-        </dd>
-    </dl>
-    
-    <div id="container_settings" style="margin-left: 20px; border-left: 3px solid #007bff; padding-left: 15px;">
-        <dl>
-            <dt>Appdata Pool:</dt>
-            <dd><input type="text" name="SOURCE_POOL_WHERE_APPDATA_IS" value="<?= htmlspecialchars($config['SOURCE_POOL_WHERE_APPDATA_IS']) ?>" placeholder="e.g., cache"></dd>
-        </dl>
-        <dl>
-            <dt>Appdata Dataset:</dt>
-            <dd><input type="text" name="SOURCE_DATASET_WHERE_APPDATA_IS" value="<?= htmlspecialchars($config['SOURCE_DATASET_WHERE_APPDATA_IS']) ?>" placeholder="e.g., appdata"></dd>
-        </dl>
+<table class="settings">
+<tr><td colspan="2" style="text-align: left;">
+    <span class="title" style="font-size: 18px; font-weight: bold;">
+        <i class="fa fa-folder" style="margin-right: 8px;"></i>Source Configuration
+    </span>
+</td></tr>
+
+<tr>
+<td>Process Docker Containers:</td>
+<td>
+    <select name="SHOULD_PROCESS_CONTAINERS" id="process_containers">
+        <option value="no" <?= $config['SHOULD_PROCESS_CONTAINERS'] == 'no' ? 'selected' : '' ?>>No</option>
+        <option value="yes" <?= $config['SHOULD_PROCESS_CONTAINERS'] == 'yes' ? 'selected' : '' ?>>Yes</option>
+    </select>
+    <span style="color: #999; font-size: 12px;">Convert Docker appdata folders to datasets</span>
+</td>
+</tr>
+
+<tr id="container_settings" style="display: none;">
+<td colspan="2">
+    <div class="subsetting">
+        <table>
+            <tr>
+                <td style="width: 150px;">Appdata Pool:</td>
+                <td><input type="text" name="SOURCE_POOL_WHERE_APPDATA_IS" value="<?= htmlspecialchars($config['SOURCE_POOL_WHERE_APPDATA_IS']) ?>" placeholder="e.g., cache"></td>
+            </tr>
+            <tr>
+                <td>Appdata Dataset:</td>
+                <td><input type="text" name="SOURCE_DATASET_WHERE_APPDATA_IS" value="<?= htmlspecialchars($config['SOURCE_DATASET_WHERE_APPDATA_IS']) ?>" placeholder="e.g., appdata"></td>
+            </tr>
+        </table>
     </div>
-    
-    <dl>
-        <dt>Process Virtual Machines:</dt>
-        <dd>
-            <select name="SHOULD_PROCESS_VMS" id="process_vms">
-                <option value="no" <?= $config['SHOULD_PROCESS_VMS'] == 'no' ? 'selected' : '' ?>>No</option>
-                <option value="yes" <?= $config['SHOULD_PROCESS_VMS'] == 'yes' ? 'selected' : '' ?>>Yes</option>
-            </select>
-            <span class="text-muted">Convert VM vdisk folders to datasets</span>
-        </dd>
-    </dl>
-    
-    <div id="vm_settings" style="margin-left: 20px; border-left: 3px solid #007bff; padding-left: 15px;">
-        <dl>
-            <dt>VM Pool:</dt>
-            <dd><input type="text" name="SOURCE_POOL_WHERE_VM_DOMAINS_ARE" value="<?= htmlspecialchars($config['SOURCE_POOL_WHERE_VM_DOMAINS_ARE']) ?>" placeholder="e.g., cache"></dd>
-        </dl>
-        <dl>
-            <dt>VM Dataset:</dt>
-            <dd><input type="text" name="SOURCE_DATASET_WHERE_VM_DOMAINS_ARE" value="<?= htmlspecialchars($config['SOURCE_DATASET_WHERE_VM_DOMAINS_ARE']) ?>" placeholder="e.g., domains"></dd>
-        </dl>
-        <dl>
-            <dt>Force Shutdown Wait:</dt>
-            <dd>
-                <input type="number" name="VM_FORCESHUTDOWN_WAIT" value="<?= htmlspecialchars($config['VM_FORCESHUTDOWN_WAIT']) ?>" min="30" max="300" style="width: 80px;"> seconds
-                <span class="text-muted">Time to wait before force-stopping VMs</span>
-            </dd>
-        </dl>
+</td>
+</tr>
+
+<tr>
+<td>Process Virtual Machines:</td>
+<td>
+    <select name="SHOULD_PROCESS_VMS" id="process_vms">
+        <option value="no" <?= $config['SHOULD_PROCESS_VMS'] == 'no' ? 'selected' : '' ?>>No</option>
+        <option value="yes" <?= $config['SHOULD_PROCESS_VMS'] == 'yes' ? 'selected' : '' ?>>Yes</option>
+    </select>
+    <span style="color: #999; font-size: 12px;">Convert VM vdisk folders to datasets</span>
+</td>
+</tr>
+
+<tr id="vm_settings" style="display: none;">
+<td colspan="2">
+    <div class="subsetting">
+        <table>
+            <tr>
+                <td style="width: 150px;">VM Pool:</td>
+                <td><input type="text" name="SOURCE_POOL_WHERE_VM_DOMAINS_ARE" value="<?= htmlspecialchars($config['SOURCE_POOL_WHERE_VM_DOMAINS_ARE']) ?>" placeholder="e.g., cache"></td>
+            </tr>
+            <tr>
+                <td>VM Dataset:</td>
+                <td><input type="text" name="SOURCE_DATASET_WHERE_VM_DOMAINS_ARE" value="<?= htmlspecialchars($config['SOURCE_DATASET_WHERE_VM_DOMAINS_ARE']) ?>" placeholder="e.g., domains"></td>
+            </tr>
+            <tr>
+                <td>Force Shutdown Wait:</td>
+                <td>
+                    <input type="number" name="VM_FORCESHUTDOWN_WAIT" value="<?= htmlspecialchars($config['VM_FORCESHUTDOWN_WAIT']) ?>" min="30" max="300" style="width: 80px;"> seconds
+                    <span style="color: #999; font-size: 12px;">Time to wait before force-stopping VMs</span>
+                </td>
+            </tr>
+        </table>
     </div>
-    
-    <dl>
-        <dt>Additional Datasets:</dt>
-        <dd>
-            <textarea name="SOURCE_DATASETS" rows="4" cols="50" placeholder="disk12&#10;tank/media&#10;backup/photos"><?= htmlspecialchars($config['SOURCE_DATASETS']) ?></textarea><br>
-            <span class="text-muted">One dataset path per line (e.g., pool/dataset)</span>
-        </dd>
-    </dl>
-</div>
+</td>
+</tr>
+
+<tr>
+<td>Additional Datasets:</td>
+<td>
+    <textarea name="SOURCE_DATASETS" rows="4" cols="50" placeholder="disk12&#10;tank/media&#10;backup/photos"><?= htmlspecialchars($config['SOURCE_DATASETS']) ?></textarea><br>
+    <span style="color: #999; font-size: 12px;">One dataset path per line (e.g., pool/dataset)</span>
+</td>
+</tr>
+</table>
 
 <!-- Notification Settings -->
-<div class="setting-group">
-    <h3><i class="fa fa-bell"></i> Notification Settings</h3>
-    
-    <dl>
-        <dt>Enable Notifications:</dt>
-        <dd>
-            <select name="ENABLE_NOTIFICATIONS" id="enable_notifications">
-                <option value="yes" <?= $config['ENABLE_NOTIFICATIONS'] == 'yes' ? 'selected' : '' ?>>Yes</option>
-                <option value="no" <?= $config['ENABLE_NOTIFICATIONS'] == 'no' ? 'selected' : '' ?>>No</option>
-            </select>
-        </dd>
-    </dl>
-    
-    <div id="notification_details" style="margin-left: 20px;">
+<table class="settings">
+<tr><td colspan="2" style="text-align: left;">
+    <span class="title" style="font-size: 18px; font-weight: bold;">
+        <i class="fa fa-bell" style="margin-right: 8px;"></i>Notification Settings
+    </span>
+</td></tr>
+
+<tr>
+<td>Enable Notifications:</td>
+<td>
+    <select name="ENABLE_NOTIFICATIONS" id="enable_notifications">
+        <option value="yes" <?= $config['ENABLE_NOTIFICATIONS'] == 'yes' ? 'selected' : '' ?>>Yes</option>
+        <option value="no" <?= $config['ENABLE_NOTIFICATIONS'] == 'no' ? 'selected' : '' ?>>No</option>
+    </select>
+</td>
+</tr>
+
+<tr id="notification_details">
+<td colspan="2">
+    <div class="subsetting">
         <table>
             <tr><td style="width: 200px;">Script Start/Completion:</td><td><select name="NOTIFY_SCRIPT_START"><option value="yes" <?= $config['NOTIFY_SCRIPT_START'] == 'yes' ? 'selected' : '' ?>>Yes</option><option value="no" <?= $config['NOTIFY_SCRIPT_START'] == 'no' ? 'selected' : '' ?>>No</option></select></td></tr>
             <tr><td>Conversion Summary:</td><td><select name="NOTIFY_CONVERSION_SUMMARY"><option value="yes" <?= $config['NOTIFY_CONVERSION_SUMMARY'] == 'yes' ? 'selected' : '' ?>>Yes</option><option value="no" <?= $config['NOTIFY_CONVERSION_SUMMARY'] == 'no' ? 'selected' : '' ?>>No</option></select></td></tr>
@@ -367,31 +443,46 @@ function saveSettings() {
             <tr><td>Resume Operations:</td><td><select name="NOTIFY_RESUME_OPERATIONS"><option value="yes" <?= $config['NOTIFY_RESUME_OPERATIONS'] == 'yes' ? 'selected' : '' ?>>Yes</option><option value="no" <?= $config['NOTIFY_RESUME_OPERATIONS'] == 'no' ? 'selected' : '' ?>>No</option></select></td></tr>
         </table>
     </div>
-</div>
+</td>
+</tr>
+</table>
 
 <!-- Actions -->
-<div class="setting-group">
-    <h3><i class="fa fa-play"></i> Actions</h3>
+<table class="settings">
+<tr><td colspan="2" style="text-align: left;">
+    <span class="title" style="font-size: 18px; font-weight: bold;">
+        <i class="fa fa-play" style="margin-right: 8px;"></i>Actions
+    </span>
+</td></tr>
+<tr><td colspan="2">
+    <div class="action-buttons">
+        <button type="button" id="start_button" onclick="startConversion()">
+            <i class="fa fa-play"></i> Start Conversion
+        </button>
+        
+        <button type="button" onclick="scanFolders()">
+            <i class="fa fa-search"></i> Scan for Convertible Folders
+        </button>
+        
+        <button type="button" onclick="saveSettings()">
+            <i class="fa fa-save"></i> Save Settings
+        </button>
+    </div>
     
-    <button type="button" id="start_button" onclick="startConversion()" class="btn btn-primary">
-        <i class="fa fa-play"></i> Start Conversion
-    </button>
-    
-    <button type="button" onclick="scanFolders()" class="btn btn-info" style="margin-left: 10px;">
-        <i class="fa fa-search"></i> Scan for Convertible Folders
-    </button>
-    
-    <button type="button" onclick="saveSettings()" class="btn btn-success" style="margin-left: 10px;">
-        <i class="fa fa-save"></i> Save Settings
-    </button>
-    
-    <div id="scan_results" style="margin-top: 15px; display: none; padding: 10px; background: #f0f0f0; border-radius: 4px;"></div>
-</div>
+    <div id="scan_results" style="display: none;"></div>
+</td></tr>
+</table>
 
 <!-- Live Log Section -->
-<div id="log_section" class="setting-group" style="display: none;">
-    <h3><i class="fa fa-terminal"></i> Live Conversion Log</h3>
+<table class="settings" id="log_section" style="display: none;">
+<tr><td colspan="2" style="text-align: left;">
+    <span class="title" style="font-size: 18px; font-weight: bold;">
+        <i class="fa fa-terminal" style="margin-right: 8px;"></i>Live Conversion Log
+    </span>
+</td></tr>
+<tr><td colspan="2">
     <div id="log_content"></div>
-</div>
+</td></tr>
+</table>
 
 </form>
