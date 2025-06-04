@@ -1,0 +1,10 @@
+<Plugin>
+  <Name>ZFS Dataset Converter</Name>
+  <Author>Split An Atom</Author>
+  <Category>Utilities</Category>
+  <Description>Convert regular folders to ZFS datasets with resume capability and intelligent validation.</Description>
+  <Support>https://github.com/SplitAnAtom/zfs-dataset-converter/issues</Support>
+  <Project>https://github.com/SplitAnAtom/zfs-dataset-converter</Project>
+  <PluginURL>https://github.com/SplitAnAtom/zfs-dataset-converter/releases/latest/download/zfs.dataset.converter.plg</PluginURL>
+  <Icon>https://github.com/SplitAnAtom/zfs-dataset-converter/raw/main/src/images/zfs_icon.png</Icon>
+</Plugin>

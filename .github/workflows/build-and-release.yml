@@ -1,0 +1,113 @@
+name: Build and Release Plugin
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  PLUGIN_NAME: "zfs.dataset.converter"
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP for validation
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+
+      - name: Validate PHP syntax
+        run: |
+          echo "Validating PHP files..."
+          find src/ -name "*.php" -exec php -l {} \;
+
+      - name: Validate XML syntax
+        run: |
+          echo "Validating .plg file..."
+          xmllint --noout src/${{ env.PLUGIN_NAME }}.plg
+
+      - name: Validate bash script syntax
+        run: |
+          echo "Validating bash script..."
+          bash -n src/scripts/zfs_converter_template.sh
+
+  build:
+    needs: validate
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate version
+        id: version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            VERSION=$(date +%Y.%m.%d)-$(git rev-parse --short HEAD)
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update plugin version
+        run: |
+          sed -i 's/version="[^"]*"/version="${{ steps.version.outputs.version }}"/' src/${{ env.PLUGIN_NAME }}.plg
+          REPO_URL="https://github.com/${{ github.repository }}"
+          sed -i "s|https://github.com/yourusername/zfs-dataset-converter|${REPO_URL}|g" src/${{ env.PLUGIN_NAME }}.plg
+
+      - name: Create plugin package
+        run: |
+          mkdir -p build/plugin
+          cp -r src/* build/plugin/
+          cd build/plugin
+          tar -czf ../plugin-files.tar.gz --exclude="*.plg" .
+          cd ../..
+          cp src/${{ env.PLUGIN_NAME }}.plg build/
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-build-${{ steps.version.outputs.version }}
+          path: build/
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
+    
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: plugin-build-${{ needs.build.outputs.version }}
+          path: build/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.build.outputs.version }}
+          name: ZFS Dataset Converter v${{ needs.build.outputs.version }}
+          draft: false
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+          body: |
+            # ZFS Dataset Converter Plugin v${{ needs.build.outputs.version }}
+            
+            ## Installation
+            Go to **Plugins** → **Install Plugin** and paste:
+            ```
+            https://github.com/${{ github.repository }}/releases/download/v${{ needs.build.outputs.version }}/${{ env.PLUGIN_NAME }}.plg
+            ```
+          files: |
+            build/${{ env.PLUGIN_NAME }}.plg
+            build/plugin-files.tar.gz

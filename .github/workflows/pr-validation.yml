@@ -1,0 +1,22 @@
+name: Pull Request Validation
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+      
+      - name: Validate all files
+        run: |
+          find src/ -name "*.php" -exec php -l {} \;
+          xmllint --noout src/*.plg
+          bash -n src/scripts/*.sh

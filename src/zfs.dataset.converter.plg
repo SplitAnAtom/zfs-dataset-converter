@@ -1,0 +1,74 @@
+<?xml version='1.0' standalone='yes'?>
+<PLUGIN name="zfs.dataset.converter" author="Hammy Havoc" version="2024.06.04" 
+        category="Utilities" support="https://forums.unraid.net/topic/xxxxx"
+        pluginURL="https://github.com/HammyHavoc/zfs-dataset-converter/releases/latest/download/zfs.dataset.converter.plg">
+
+<CHANGES>
+##ZFS Dataset Converter
+
+###2024.06.04
+- Initial release with full GUI interface
+- Resume interrupted conversions automatically
+- Intelligent validation system (no false failures)
+- Configurable Unraid notifications for all operations
+- Real-time progress monitoring and live logs
+- Container and VM management during conversion
+- Special character handling for dataset names
+- Comprehensive space checking and warnings
+</CHANGES>
+
+<FILE Run="/bin/bash">
+<INLINE>
+<![CDATA[
+mkdir -p /usr/local/emhttp/plugins/zfs.dataset.converter
+mkdir -p /boot/config/plugins/zfs.dataset.converter
+
+cd /tmp
+wget -O plugin-files.tar.gz "https://github.com/HammyHavoc/zfs-dataset-converter/releases/latest/download/plugin-files.tar.gz"
+tar -xzf plugin-files.tar.gz -C /usr/local/emhttp/plugins/zfs.dataset.converter/
+
+chmod +x /usr/local/emhttp/plugins/zfs.dataset.converter/scripts/*.sh
+chmod +x /usr/local/emhttp/plugins/zfs.dataset.converter/scripts/*.php
+
+if [ ! -f /boot/config/plugins/zfs.dataset.converter/settings.cfg ]; then
+cat > /boot/config/plugins/zfs.dataset.converter/settings.cfg << 'EOFCFG'
+DRY_RUN="no"
+CLEANUP="yes"
+REPLACE_SPACES="no"
+ENABLE_NOTIFICATIONS="yes"
+NOTIFY_SCRIPT_START="yes"
+NOTIFY_SCRIPT_COMPLETION="yes"
+NOTIFY_CONVERSION_SUMMARY="yes"
+NOTIFY_ERRORS="yes"
+NOTIFY_WARNINGS="yes"
+NOTIFY_RESUME_OPERATIONS="yes"
+NOTIFY_CONTAINER_VM_STOPS="yes"
+NOTIFY_SPACE_ISSUES="yes"
+SHOULD_PROCESS_CONTAINERS="no"
+SOURCE_POOL_WHERE_APPDATA_IS="cache"
+SOURCE_DATASET_WHERE_APPDATA_IS="appdata"
+SHOULD_PROCESS_VMS="no"
+SOURCE_POOL_WHERE_VM_DOMAINS_ARE="cache"
+SOURCE_DATASET_WHERE_VM_DOMAINS_ARE="domains"
+VM_FORCESHUTDOWN_WAIT="90"
+BUFFER_ZONE="11"
+SOURCE_DATASETS=""
+EOFCFG
+fi
+
+echo "ZFS Dataset Converter plugin installed successfully"
+]]>
+</INLINE>
+</FILE>
+
+<FILE Run="/bin/bash" Method="remove">
+<INLINE>
+<![CDATA[
+pkill -f "zfs_converter.sh" 2>/dev/null
+rm -rf /usr/local/emhttp/plugins/zfs.dataset.converter
+echo "ZFS Dataset Converter plugin removed"
+]]>
+</INLINE>
+</FILE>
+
+</PLUGIN>
