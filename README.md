@@ -21,4 +21,4 @@ https://github.com/HammyHavoc/zfs-dataset-converter/releases/latest/download/zfs
 3. Click "Start Conversion"
 
 ## Support
-- [GitHub Issues](https://github.com/HammyHavoc/zfs-dataset-converter/issues)
+- [GitHub Issues](https://github.com/SplitAnAtom/zfs-dataset-converter/issues)
