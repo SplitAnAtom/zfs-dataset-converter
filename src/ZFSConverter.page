@@ -1,125 +1,57 @@
-<?xml version='1.0' standalone='yes'?>
-<PLUGIN name="zfs.dataset.converter" author="Split An Atom" version="2025.01.04" 
-        category="Utilities" support="https://github.com/SplitAnAtom/zfs-dataset-converter/issues"
-        pluginURL="https://github.com/SplitAnAtom/zfs-dataset-converter/releases/latest/download/zfs.dataset.converter.plg"
-        icon="fa-database">
+Menu="Utilities"
+Title="ZFS Dataset Converter"
+Icon="fa-database"
+---
+<?PHP
+// Minimal test version to debug issues
+// Copyright 2025, Split An Atom
 
-<CHANGES>
-##ZFS Dataset Converter
+echo "<h1>ZFS Dataset Converter - Test Page</h1>";
+echo "<p>If you can see this, the plugin is working!</p>";
+echo "<p>PHP Version: " . phpversion() . "</p>";
+echo "<p>Current Time: " . date('Y-m-d H:i:s') . "</p>";
 
-###2025.01.04a
-- Fixed plugin GUI loading issues
-- Fixed icon display in plugin list
-- Added debugging capabilities
-- Simplified initial installation
+// Test basic functionality
+$plugin = "zfs.dataset.converter";
+$config_file = "/boot/config/plugins/$plugin/settings.cfg";
 
-###2025.01.04
-- Updated copyright to 2025, Split An Atom
-- Enhanced GUI integration with Unraid styling system
-- Improved theme compatibility (dark/light mode support)
-- Fixed white background and readability issues
+echo "<h2>Plugin Status:</h2>";
+echo "<ul>";
+echo "<li>Plugin Name: $plugin</li>";
+echo "<li>Config File: " . ($config_file) . "</li>";
+echo "<li>Config Exists: " . (file_exists($config_file) ? "YES" : "NO") . "</li>";
+echo "<li>Plugin Directory: /usr/local/emhttp/plugins/$plugin/</li>";
+echo "<li>Directory Exists: " . (is_dir("/usr/local/emhttp/plugins/$plugin/") ? "YES" : "NO") . "</li>";
+echo "</ul>";
 
-###2024.06.04
-- Initial release with full GUI interface
-- Resume interrupted conversions automatically
-- Intelligent validation system (no false failures)
-- Configurable Unraid notifications for all operations
-- Real-time progress monitoring and live logs
-- Container and VM management during conversion
-- Special character handling for dataset names
-- Comprehensive space checking and warnings
-</CHANGES>
+// Test scripts directory
+$scripts_dir = "/usr/local/emhttp/plugins/$plugin/scripts/";
+echo "<h2>Scripts Directory:</h2>";
+echo "<ul>";
+echo "<li>Scripts Path: $scripts_dir</li>";
+echo "<li>Scripts Dir Exists: " . (is_dir($scripts_dir) ? "YES" : "NO") . "</li>";
 
-<FILE Run="/bin/bash">
-<INLINE>
-<![CDATA[
-echo "Installing ZFS Dataset Converter plugin..."
+if (is_dir($scripts_dir)) {
+    $scripts = scandir($scripts_dir);
+    echo "<li>Scripts Found:</li>";
+    echo "<ul>";
+    foreach ($scripts as $script) {
+        if ($script != '.' && $script != '..') {
+            echo "<li>$script</li>";
+        }
+    }
+    echo "</ul>";
+}
+echo "</ul>";
 
-# Create plugin directories
-mkdir -p /usr/local/emhttp/plugins/zfs.dataset.converter
-mkdir -p /usr/local/emhttp/plugins/zfs.dataset.converter/scripts
-mkdir -p /boot/config/plugins/zfs.dataset.converter
+// Simple test form
+echo "<h2>Basic Test Form:</h2>";
+echo '<form method="post">';
+echo '<p>Test Input: <input type="text" name="test" value="' . (isset($_POST['test']) ? htmlspecialchars($_POST['test']) : '') . '"></p>';
+echo '<p><input type="submit" value="Test Submit"></p>';
+echo '</form>';
 
-# Download and extract plugin files
-cd /tmp
-echo "Downloading plugin files..."
-wget -O plugin-files.tar.gz "https://github.com/SplitAnAtom/zfs-dataset-converter/releases/latest/download/plugin-files.tar.gz" 2>/dev/null
-
-if [ $? -eq 0 ] && [ -f plugin-files.tar.gz ]; then
-    echo "Extracting plugin files..."
-    tar -xzf plugin-files.tar.gz -C /usr/local/emhttp/plugins/zfs.dataset.converter/
-    
-    # Set proper permissions
-    chmod +x /usr/local/emhttp/plugins/zfs.dataset.converter/scripts/*.sh 2>/dev/null
-    chmod +x /usr/local/emhttp/plugins/zfs.dataset.converter/scripts/*.php 2>/dev/null
-    
-    echo "Plugin files installed successfully"
-else
-    echo "Warning: Could not download plugin files from GitHub releases"
-    echo "Plugin will install with basic functionality only"
-fi
-
-# Create default settings file if it doesn't exist
-if [ ! -f /boot/config/plugins/zfs.dataset.converter/settings.cfg ]; then
-echo "Creating default configuration..."
-cat > /boot/config/plugins/zfs.dataset.converter/settings.cfg << 'EOFCFG'
-# ZFS Dataset Converter Configuration
-# Generated on $(date)
-
-DRY_RUN="no"
-CLEANUP="yes"
-REPLACE_SPACES="no"
-ENABLE_NOTIFICATIONS="yes"
-NOTIFY_SCRIPT_START="yes"
-NOTIFY_SCRIPT_COMPLETION="yes"
-NOTIFY_CONVERSION_SUMMARY="yes"
-NOTIFY_ERRORS="yes"
-NOTIFY_WARNINGS="yes"
-NOTIFY_RESUME_OPERATIONS="yes"
-NOTIFY_CONTAINER_VM_STOPS="yes"
-NOTIFY_SPACE_ISSUES="yes"
-SHOULD_PROCESS_CONTAINERS="no"
-SOURCE_POOL_WHERE_APPDATA_IS="cache"
-SOURCE_DATASET_WHERE_APPDATA_IS="appdata"
-SHOULD_PROCESS_VMS="no"
-SOURCE_POOL_WHERE_VM_DOMAINS_ARE="cache"
-SOURCE_DATASET_WHERE_VM_DOMAINS_ARE="domains"
-VM_FORCESHUTDOWN_WAIT="90"
-BUFFER_ZONE="11"
-SOURCE_DATASETS=""
-EOFCFG
-fi
-
-# Verify installation
-if [ -f /usr/local/emhttp/plugins/zfs.dataset.converter/ZFSConverter.page ]; then
-    echo "✓ ZFS Dataset Converter plugin installed successfully"
-    echo "✓ Access via: Settings → Utilities → ZFS Dataset Converter"
-else
-    echo "⚠ Plugin installation may be incomplete"
-    echo "Check: https://github.com/SplitAnAtom/zfs-dataset-converter/releases"
-fi
-]]>
-</INLINE>
-</FILE>
-
-<FILE Run="/bin/bash" Method="remove">
-<INLINE>
-<![CDATA[
-echo "Removing ZFS Dataset Converter plugin..."
-
-# Stop any running processes
-pkill -f "zfs_converter" 2>/dev/null
-
-# Remove plugin files
-rm -rf /usr/local/emhttp/plugins/zfs.dataset.converter
-
-# Note: We keep the configuration in /boot/config/plugins/zfs.dataset.converter
-# so user settings are preserved if they reinstall
-
-echo "ZFS Dataset Converter plugin removed successfully"
-echo "(Configuration files preserved in /boot/config/plugins/zfs.dataset.converter/)"
-]]>
-</INLINE>
-</FILE>
-
-</PLUGIN>
+if (isset($_POST['test'])) {
+    echo "<p><strong>Form submitted successfully!</strong> You entered: " . htmlspecialchars($_POST['test']) . "</p>";
+}
+?>
