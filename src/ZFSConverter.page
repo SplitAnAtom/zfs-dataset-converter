@@ -1,9 +1,9 @@
 Menu="Utilities"
 Title="ZFS Dataset Converter"
-Icon="zfs.dataset.converter.png"
+Icon="icon-database"
 ---
 <?PHP
-/* Copyright 2024, HammyHavoc.
+/* Copyright 2025, Split An Atom.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version 2,
@@ -57,7 +57,13 @@ $config = array_merge([
 // Get current status
 $status = ['status' => 'idle', 'message' => 'Ready for conversion'];
 if (file_exists($status_file)) {
-    $status = json_decode(file_get_contents($status_file), true) ?: $status;
+    $status_data = file_get_contents($status_file);
+    if ($status_data) {
+        $parsed_status = json_decode($status_data, true);
+        if ($parsed_status) {
+            $status = $parsed_status;
+        }
+    }
 }
 ?>
 
@@ -66,21 +72,39 @@ $(function() {
     // Auto-refresh status every 5 seconds
     setInterval(function() {
         $.get('/plugins/<?=$plugin?>/scripts/get_status.php', function(data) {
-            updateStatus(JSON.parse(data));
+            try {
+                updateStatus(JSON.parse(data));
+            } catch(e) {
+                console.log('Status update error:', e);
+            }
+        }).fail(function() {
+            console.log('Status update failed');
         });
     }, 5000);
     
     // Show/hide dependent settings
     $('#process_containers').change(function() {
-        $('#container_settings').toggle(this.checked);
+        if ($(this).val() === 'yes') {
+            $('#container_settings').show();
+        } else {
+            $('#container_settings').hide();
+        }
     }).trigger('change');
     
     $('#process_vms').change(function() {
-        $('#vm_settings').toggle(this.checked);
+        if ($(this).val() === 'yes') {
+            $('#vm_settings').show();
+        } else {
+            $('#vm_settings').hide();
+        }
     }).trigger('change');
     
     $('#enable_notifications').change(function() {
-        $('#notification_details').toggle(this.checked);
+        if ($(this).val() === 'yes') {
+            $('#notification_details').show();
+        } else {
+            $('#notification_details').hide();
+        }
     }).trigger('change');
 });
 
@@ -113,10 +137,12 @@ function updateStatus(status) {
 }
 
 function startConversion() {
-    if ($('#dry_run').is(':checked')) {
+    var isDryRun = $('input[name="DRY_RUN"]:checked').val() === 'yes';
+    
+    if (isDryRun) {
         if (!confirm('Start conversion in DRY RUN mode? No actual changes will be made.')) return;
     } else {
-        if (!confirm('Start LIVE conversion? This will modify your filesystem!')) return;
+        if (!confirm('Start LIVE conversion? This will modify your filesystem!\n\nEnsure you have backups and adequate free space.')) return;
     }
     
     $('#start_button').prop('disabled', true).text('Starting...');
@@ -124,13 +150,20 @@ function startConversion() {
     $.post('/plugins/<?=$plugin?>/scripts/start_conversion.php', 
            $('#converter_form').serialize())
      .done(function(response) {
-         var result = JSON.parse(response);
-         if (result.success) {
-             $('#status_text').text('Conversion started successfully');
-             $('#log_section').show();
-             startLogTail(result.log_file);
-         } else {
-             alert('Error starting conversion: ' + result.error);
+         try {
+             var result = JSON.parse(response);
+             if (result.success) {
+                 $('#status_text').text('Conversion started successfully');
+                 $('#log_section').show();
+                 if (result.log_file) {
+                     startLogTail(result.log_file);
+                 }
+             } else {
+                 alert('Error starting conversion: ' + result.error);
+                 $('#start_button').prop('disabled', false).text('Start Conversion');
+             }
+         } catch(e) {
+             alert('Error parsing response: ' + e.message);
              $('#start_button').prop('disabled', false).text('Start Conversion');
          }
      })
@@ -141,29 +174,35 @@ function startConversion() {
 }
 
 function scanFolders() {
-    $('#scan_results').html('<i class="fa fa-spinner fa-spin"></i> Scanning...').show();
+    $('#scan_results').html('<i class="fa fa-spinner fa-spin"></i> Scanning for convertible folders...').show();
     
     $.post('/plugins/<?=$plugin?>/scripts/scan_folders.php',
            $('#converter_form').serialize())
      .done(function(response) {
          $('#scan_results').html(response);
+     })
+     .fail(function() {
+         $('#scan_results').html('<div style="color: red;">Error: Could not scan folders. Check plugin installation.</div>');
      });
 }
 
 function startLogTail(logFile) {
-    setInterval(function() {
+    var logInterval = setInterval(function() {
         $.get('/plugins/<?=$plugin?>/scripts/get_logs.php?file=' + encodeURIComponent(logFile))
          .done(function(logs) {
              $('#log_content').html(logs);
              $('#log_content').scrollTop($('#log_content')[0].scrollHeight);
          });
     }, 2000);
+    
+    // Store interval ID for potential cleanup
+    window.logTailInterval = logInterval;
 }
 
 function saveSettings() {
     $.post('/plugins/<?=$plugin?>/scripts/save_settings.php',
            $('#converter_form').serialize())
-     .done(function() {
+     .done(function(response) {
          alert('Settings saved successfully!');
      })
      .fail(function() {
@@ -173,7 +212,7 @@ function saveSettings() {
 </script>
 
 <style>
-/* Status indicators using Unraid color scheme */
+/* Status indicators */
 .status-indicator {
     display: inline-block;
     width: 10px;
@@ -182,7 +221,10 @@ function saveSettings() {
     margin-right: 8px;
 }
 .status-idle { background-color: #888; }
-.status-running { background-color: #0a84ff; animation: pulse 1.5s infinite; }
+.status-running { 
+    background-color: #0a84ff; 
+    animation: pulse 1.5s infinite; 
+}
 .status-warning { background-color: #ff9500; }
 .status-error { background-color: #ff3b30; }
 
@@ -192,7 +234,7 @@ function saveSettings() {
     100% { opacity: 1; }
 }
 
-/* Log display using terminal styling */
+/* Log display */
 #log_content {
     background-color: #1a1a1a;
     color: #00ff41;
@@ -207,7 +249,7 @@ function saveSettings() {
     word-wrap: break-word;
 }
 
-/* Subtle styling for nested settings */
+/* Subsection styling */
 .subsetting {
     margin-left: 25px;
     padding-left: 15px;
@@ -221,7 +263,7 @@ function saveSettings() {
     margin-bottom: 10px;
 }
 
-/* Scan results styling */
+/* Scan results */
 #scan_results {
     margin-top: 15px;
     padding: 15px;
@@ -268,12 +310,13 @@ function saveSettings() {
 
 <!-- Status Section -->
 <table class="settings">
-<tr><td colspan="2" style="text-align: left;">
-    <span class="title" style="font-size: 18px; font-weight: bold;">
-        <i class="fa fa-tachometer" style="margin-right: 8px;"></i>Current Status
-    </span>
-</td></tr>
-<tr><td colspan="2">
+<tr>
+<td colspan="2">
+    <strong><i class="fa fa-tachometer"></i> Current Status</strong>
+</td>
+</tr>
+<tr>
+<td colspan="2">
     <div style="margin-bottom: 15px;">
         <span id="status_indicator" class="status-indicator status-idle"></span>
         <span id="status_text"><?= htmlspecialchars($status['message']) ?></span>
@@ -284,21 +327,22 @@ function saveSettings() {
         <progress id="progress_bar" value="0" max="100"></progress>
         <div id="progress_text">0%</div>
     </div>
-</td></tr>
+</td>
+</tr>
 </table>
 
 <!-- Basic Settings -->
 <table class="settings">
-<tr><td colspan="2" style="text-align: left;">
-    <span class="title" style="font-size: 18px; font-weight: bold;">
-        <i class="fa fa-cogs" style="margin-right: 8px;"></i>Basic Settings
-    </span>
-</td></tr>
+<tr>
+<td colspan="2">
+    <strong><i class="fa fa-cogs"></i> Basic Settings</strong>
+</td>
+</tr>
 
 <tr>
 <td>Run Mode:</td>
 <td>
-    <label><input type="radio" name="DRY_RUN" value="yes" <?= $config['DRY_RUN'] == 'yes' ? 'checked' : '' ?> id="dry_run"> Dry Run (Test Mode - No Changes)</label><br>
+    <label><input type="radio" name="DRY_RUN" value="yes" <?= $config['DRY_RUN'] == 'yes' ? 'checked' : '' ?>> Dry Run (Test Mode - No Changes)</label><br>
     <label><input type="radio" name="DRY_RUN" value="no" <?= $config['DRY_RUN'] == 'no' ? 'checked' : '' ?>> Live Run (Make Actual Changes)</label>
 </td>
 </tr>
@@ -334,11 +378,11 @@ function saveSettings() {
 
 <!-- Source Configuration -->
 <table class="settings">
-<tr><td colspan="2" style="text-align: left;">
-    <span class="title" style="font-size: 18px; font-weight: bold;">
-        <i class="fa fa-folder" style="margin-right: 8px;"></i>Source Configuration
-    </span>
-</td></tr>
+<tr>
+<td colspan="2">
+    <strong><i class="fa fa-folder"></i> Source Configuration</strong>
+</td>
+</tr>
 
 <tr>
 <td>Process Docker Containers:</td>
@@ -414,11 +458,11 @@ function saveSettings() {
 
 <!-- Notification Settings -->
 <table class="settings">
-<tr><td colspan="2" style="text-align: left;">
-    <span class="title" style="font-size: 18px; font-weight: bold;">
-        <i class="fa fa-bell" style="margin-right: 8px;"></i>Notification Settings
-    </span>
-</td></tr>
+<tr>
+<td colspan="2">
+    <strong><i class="fa fa-bell"></i> Notification Settings</strong>
+</td>
+</tr>
 
 <tr>
 <td>Enable Notifications:</td>
@@ -449,12 +493,13 @@ function saveSettings() {
 
 <!-- Actions -->
 <table class="settings">
-<tr><td colspan="2" style="text-align: left;">
-    <span class="title" style="font-size: 18px; font-weight: bold;">
-        <i class="fa fa-play" style="margin-right: 8px;"></i>Actions
-    </span>
-</td></tr>
-<tr><td colspan="2">
+<tr>
+<td colspan="2">
+    <strong><i class="fa fa-play"></i> Actions</strong>
+</td>
+</tr>
+<tr>
+<td colspan="2">
     <div class="action-buttons">
         <button type="button" id="start_button" onclick="startConversion()">
             <i class="fa fa-play"></i> Start Conversion
@@ -470,19 +515,22 @@ function saveSettings() {
     </div>
     
     <div id="scan_results" style="display: none;"></div>
-</td></tr>
+</td>
+</tr>
 </table>
 
 <!-- Live Log Section -->
 <table class="settings" id="log_section" style="display: none;">
-<tr><td colspan="2" style="text-align: left;">
-    <span class="title" style="font-size: 18px; font-weight: bold;">
-        <i class="fa fa-terminal" style="margin-right: 8px;"></i>Live Conversion Log
-    </span>
-</td></tr>
-<tr><td colspan="2">
+<tr>
+<td colspan="2">
+    <strong><i class="fa fa-terminal"></i> Live Conversion Log</strong>
+</td>
+</tr>
+<tr>
+<td colspan="2">
     <div id="log_content"></div>
-</td></tr>
+</td>
+</tr>
 </table>
 
 </form>
