@@ -1,112 +1,397 @@
-<?php
-// /usr/local/emhttp/plugins/zfs.dataset.converter/scripts/start_conversion.php
-header('Content-Type: application/json');
-
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['error' => 'Method not allowed']);
-    exit;
-}
+Menu="Utilities"
+Title="ZFS Dataset Converter"
+Icon="zfs.dataset.converter.png"
+---
+<?PHP
+/* Copyright 2024, HammyHavoc.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License version 2,
+ * as published by the Free Software Foundation.
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ */
 
 $plugin = "zfs.dataset.converter";
 $config_file = "/boot/config/plugins/$plugin/settings.cfg";
-$script_path = "/usr/local/emhttp/plugins/$plugin/scripts/zfs_converter.sh";
 $status_file = "/tmp/zfs_converter_status.json";
 
-// Parse form data
-parse_str(file_get_contents('php://input'), $form_data);
-
-// Validate required paths exist
-if ($form_data['SHOULD_PROCESS_CONTAINERS'] === 'yes') {
-    $container_path = "/mnt/{$form_data['SOURCE_POOL_WHERE_APPDATA_IS']}/{$form_data['SOURCE_DATASET_WHERE_APPDATA_IS']}";
-    if (!is_dir($container_path)) {
-        echo json_encode(['error' => "Container path does not exist: $container_path"]);
-        exit;
-    }
-}
-
-if ($form_data['SHOULD_PROCESS_VMS'] === 'yes') {
-    $vm_path = "/mnt/{$form_data['SOURCE_POOL_WHERE_VM_DOMAINS_ARE']}/{$form_data['SOURCE_DATASET_WHERE_VM_DOMAINS_ARE']}";
-    if (!is_dir($vm_path)) {
-        echo json_encode(['error' => "VM path does not exist: $vm_path"]);
-        exit;
-    }
-}
-
-// Check if script is already running
-if (file_exists($status_file)) {
-    $status = json_decode(file_get_contents($status_file), true);
-    if ($status['status'] === 'running') {
-        echo json_encode(['error' => 'Conversion is already running']);
-        exit;
-    }
-}
-
-// Generate script configuration
-$script_config = generateScriptConfig($form_data);
-$temp_script = "/tmp/zfs_converter_" . uniqid() . ".sh";
-file_put_contents($temp_script, $script_config);
-chmod($temp_script, 0755);
-
-// Prepare log file
-$log_file = "/tmp/zfs_converter_" . date('Y-m-d_H-i-s') . ".log";
-
-// Start conversion in background
-$cmd = "$temp_script > $log_file 2>&1 & echo $!";
-$pid = trim(shell_exec($cmd));
-
-// Store process info
-$status_data = [
-    'status' => 'running',
-    'pid' => $pid,
-    'started' => time(),
-    'log_file' => $log_file,
-    'temp_script' => $temp_script,
-    'config' => $form_data,
-    'message' => 'Conversion started successfully'
-];
-
-file_put_contents($status_file, json_encode($status_data, JSON_PRETTY_PRINT));
-
-echo json_encode(['success' => true, 'log_file' => $log_file, 'pid' => $pid]);
-
-function generateScriptConfig($config) {
-    $script = file_get_contents("/usr/local/emhttp/plugins/zfs.dataset.converter/scripts/zfs_converter_template.sh");
-    
-    // Replace configuration variables
-    $replacements = [
-        '{{DRY_RUN}}' => $config['DRY_RUN'],
-        '{{CLEANUP}}' => $config['CLEANUP'],
-        '{{REPLACE_SPACES}}' => $config['REPLACE_SPACES'],
-        '{{ENABLE_NOTIFICATIONS}}' => $config['ENABLE_NOTIFICATIONS'],
-        '{{NOTIFY_SCRIPT_START}}' => $config['NOTIFY_SCRIPT_START'],
-        '{{NOTIFY_SCRIPT_COMPLETION}}' => $config['NOTIFY_SCRIPT_COMPLETION'],
-        '{{NOTIFY_CONVERSION_SUMMARY}}' => $config['NOTIFY_CONVERSION_SUMMARY'],
-        '{{NOTIFY_ERRORS}}' => $config['NOTIFY_ERRORS'],
-        '{{NOTIFY_WARNINGS}}' => $config['NOTIFY_WARNINGS'],
-        '{{NOTIFY_RESUME_OPERATIONS}}' => $config['NOTIFY_RESUME_OPERATIONS'],
-        '{{NOTIFY_CONTAINER_VM_STOPS}}' => $config['NOTIFY_CONTAINER_VM_STOPS'],
-        '{{NOTIFY_SPACE_ISSUES}}' => $config['NOTIFY_SPACE_ISSUES'],
-        '{{SHOULD_PROCESS_CONTAINERS}}' => $config['SHOULD_PROCESS_CONTAINERS'],
-        '{{SOURCE_POOL_WHERE_APPDATA_IS}}' => $config['SOURCE_POOL_WHERE_APPDATA_IS'],
-        '{{SOURCE_DATASET_WHERE_APPDATA_IS}}' => $config['SOURCE_DATASET_WHERE_APPDATA_IS'],
-        '{{SHOULD_PROCESS_VMS}}' => $config['SHOULD_PROCESS_VMS'],
-        '{{SOURCE_POOL_WHERE_VM_DOMAINS_ARE}}' => $config['SOURCE_POOL_WHERE_VM_DOMAINS_ARE'],
-        '{{SOURCE_DATASET_WHERE_VM_DOMAINS_ARE}}' => $config['SOURCE_DATASET_WHERE_VM_DOMAINS_ARE'],
-        '{{VM_FORCESHUTDOWN_WAIT}}' => $config['VM_FORCESHUTDOWN_WAIT'],
-        '{{BUFFER_ZONE}}' => $config['BUFFER_ZONE']
-    ];
-    
-    // Handle additional datasets
-    $additional_datasets = '';
-    if (!empty($config['SOURCE_DATASETS'])) {
-        $datasets = array_filter(array_map('trim', explode("\n", $config['SOURCE_DATASETS'])));
-        foreach ($datasets as $dataset) {
-            $additional_datasets .= "  \"$dataset\"\n";
+// Load current settings
+$config = [];
+if (file_exists($config_file)) {
+    $lines = file($config_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        if (strpos($line, '=') !== false && substr($line, 0, 1) !== '#') {
+            list($key, $value) = explode('=', $line, 2);
+            $config[trim($key)] = trim($value, '"');
         }
     }
-    $replacements['{{SOURCE_DATASETS_ARRAY}}'] = $additional_datasets;
-    
-    return str_replace(array_keys($replacements), array_values($replacements), $script);
+}
+
+// Default values
+$config = array_merge([
+    'DRY_RUN' => 'no',
+    'CLEANUP' => 'yes',
+    'REPLACE_SPACES' => 'no',
+    'ENABLE_NOTIFICATIONS' => 'yes',
+    'NOTIFY_SCRIPT_START' => 'yes',
+    'NOTIFY_SCRIPT_COMPLETION' => 'yes',
+    'NOTIFY_CONVERSION_SUMMARY' => 'yes',
+    'NOTIFY_ERRORS' => 'yes',
+    'NOTIFY_WARNINGS' => 'yes',
+    'NOTIFY_RESUME_OPERATIONS' => 'yes',
+    'NOTIFY_CONTAINER_VM_STOPS' => 'yes',
+    'NOTIFY_SPACE_ISSUES' => 'yes',
+    'SHOULD_PROCESS_CONTAINERS' => 'no',
+    'SOURCE_POOL_WHERE_APPDATA_IS' => 'cache',
+    'SOURCE_DATASET_WHERE_APPDATA_IS' => 'appdata',
+    'SHOULD_PROCESS_VMS' => 'no',
+    'SOURCE_POOL_WHERE_VM_DOMAINS_ARE' => 'cache',
+    'SOURCE_DATASET_WHERE_VM_DOMAINS_ARE' => 'domains',
+    'VM_FORCESHUTDOWN_WAIT' => '90',
+    'BUFFER_ZONE' => '11',
+    'SOURCE_DATASETS' => ''
+], $config);
+
+// Get current status
+$status = ['status' => 'idle', 'message' => 'Ready for conversion'];
+if (file_exists($status_file)) {
+    $status = json_decode(file_get_contents($status_file), true) ?: $status;
 }
 ?>
+
+<script>
+$(function() {
+    // Auto-refresh status every 5 seconds
+    setInterval(function() {
+        $.get('/plugins/<?=$plugin?>/scripts/get_status.php', function(data) {
+            updateStatus(JSON.parse(data));
+        });
+    }, 5000);
+    
+    // Show/hide dependent settings
+    $('#process_containers').change(function() {
+        $('#container_settings').toggle(this.checked);
+    }).trigger('change');
+    
+    $('#process_vms').change(function() {
+        $('#vm_settings').toggle(this.checked);
+    }).trigger('change');
+    
+    $('#enable_notifications').change(function() {
+        $('#notification_details').toggle(this.checked);
+    }).trigger('change');
+});
+
+function updateStatus(status) {
+    $('#status_text').text(status.message || 'Ready for conversion');
+    
+    var indicator = $('#status_indicator');
+    indicator.removeClass('idle running warning error');
+    
+    switch(status.status) {
+        case 'running':
+            indicator.addClass('running');
+            $('#progress_section').show();
+            break;
+        case 'warning':
+            indicator.addClass('warning');
+            break;
+        case 'error':
+            indicator.addClass('error');
+            break;
+        default:
+            indicator.addClass('idle');
+            $('#progress_section').hide();
+    }
+    
+    if (status.progress) {
+        $('#progress_bar').val(status.progress);
+        $('#progress_text').text(status.progress + '%');
+    }
+}
+
+function startConversion() {
+    if ($('#dry_run').is(':checked')) {
+        if (!confirm('Start conversion in DRY RUN mode? No actual changes will be made.')) return;
+    } else {
+        if (!confirm('Start LIVE conversion? This will modify your filesystem!')) return;
+    }
+    
+    $('#start_button').prop('disabled', true).text('Starting...');
+    
+    $.post('/plugins/<?=$plugin?>/scripts/start_conversion.php', 
+           $('#converter_form').serialize())
+     .done(function(response) {
+         var result = JSON.parse(response);
+         if (result.success) {
+             $('#status_text').text('Conversion started successfully');
+             $('#log_section').show();
+             startLogTail(result.log_file);
+         } else {
+             alert('Error starting conversion: ' + result.error);
+             $('#start_button').prop('disabled', false).text('Start Conversion');
+         }
+     })
+     .fail(function() {
+         alert('Failed to start conversion. Check plugin installation.');
+         $('#start_button').prop('disabled', false).text('Start Conversion');
+     });
+}
+
+function scanFolders() {
+    $('#scan_results').html('<i class="fa fa-spinner fa-spin"></i> Scanning...').show();
+    
+    $.post('/plugins/<?=$plugin?>/scripts/scan_folders.php',
+           $('#converter_form').serialize())
+     .done(function(response) {
+         $('#scan_results').html(response);
+     });
+}
+
+function startLogTail(logFile) {
+    setInterval(function() {
+        $.get('/plugins/<?=$plugin?>/scripts/get_logs.php?file=' + encodeURIComponent(logFile))
+         .done(function(logs) {
+             $('#log_content').html(logs);
+             $('#log_content').scrollTop($('#log_content')[0].scrollHeight);
+         });
+    }, 2000);
+}
+
+function saveSettings() {
+    $.post('/plugins/<?=$plugin?>/scripts/save_settings.php',
+           $('#converter_form').serialize())
+     .done(function() {
+         alert('Settings saved successfully!');
+     })
+     .fail(function() {
+         alert('Error saving settings!');
+     });
+}
+</script>
+
+<style>
+.status-indicator {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 8px;
+}
+.status-indicator.idle { background: #6c757d; }
+.status-indicator.running { background: #28a745; }
+.status-indicator.warning { background: #ffc107; }
+.status-indicator.error { background: #dc3545; }
+
+#log_content {
+    background: #000;
+    color: #00ff00;
+    font-family: monospace;
+    padding: 10px;
+    height: 400px;
+    overflow-y: scroll;
+    border-radius: 4px;
+    white-space: pre-wrap;
+}
+
+.setting-group {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 15px;
+    margin: 10px 0;
+    background: #f9f9f9;
+}
+
+.setting-group h3 {
+    margin-top: 0;
+    color: #333;
+}
+
+.progress-container {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 15px;
+    margin: 15px 0;
+}
+</style>
+
+<form id="converter_form" method="POST">
+
+<!-- Status Section -->
+<div class="setting-group">
+    <h3><i class="fa fa-tachometer"></i> Current Status</h3>
+    <div style="margin-bottom: 15px;">
+        <span id="status_indicator" class="status-indicator idle"></span>
+        <span id="status_text"><?= htmlspecialchars($status['message']) ?></span>
+    </div>
+    
+    <div id="progress_section" style="display: none;">
+        <div class="progress-container">
+            <div><strong>Conversion Progress</strong></div>
+            <progress id="progress_bar" value="0" max="100" style="width: 100%; height: 20px;"></progress>
+            <div id="progress_text">0%</div>
+        </div>
+    </div>
+</div>
+
+<!-- Basic Settings -->
+<div class="setting-group">
+    <h3><i class="fa fa-cogs"></i> Basic Settings</h3>
+    
+    <dl>
+        <dt>Run Mode:</dt>
+        <dd>
+            <label><input type="radio" name="DRY_RUN" value="yes" <?= $config['DRY_RUN'] == 'yes' ? 'checked' : '' ?> id="dry_run"> Dry Run (Test Mode - No Changes)</label><br>
+            <label><input type="radio" name="DRY_RUN" value="no" <?= $config['DRY_RUN'] == 'no' ? 'checked' : '' ?>> Live Run (Make Actual Changes)</label>
+        </dd>
+    </dl>
+    
+    <dl>
+        <dt>Enable Cleanup:</dt>
+        <dd>
+            <select name="CLEANUP">
+                <option value="yes" <?= $config['CLEANUP'] == 'yes' ? 'selected' : '' ?>>Yes - Automatically remove temp directories after validation</option>
+                <option value="no" <?= $config['CLEANUP'] == 'no' ? 'selected' : '' ?>>No - Keep temp directories for manual inspection</option>
+            </select>
+        </dd>
+    </dl>
+    
+    <dl>
+        <dt>Replace Spaces:</dt>
+        <dd>
+            <select name="REPLACE_SPACES">
+                <option value="no" <?= $config['REPLACE_SPACES'] == 'no' ? 'selected' : '' ?>>No - Keep spaces in folder names</option>
+                <option value="yes" <?= $config['REPLACE_SPACES'] == 'yes' ? 'selected' : '' ?>>Yes - Replace spaces with underscores</option>
+            </select>
+        </dd>
+    </dl>
+    
+    <dl>
+        <dt>Buffer Zone:</dt>
+        <dd>
+            <input type="number" name="BUFFER_ZONE" value="<?= htmlspecialchars($config['BUFFER_ZONE']) ?>" min="5" max="50" style="width: 80px;">%
+            <span class="text-muted">Extra space required above folder size (recommended: 11%)</span>
+        </dd>
+    </dl>
+</div>
+
+<!-- Source Configuration -->
+<div class="setting-group">
+    <h3><i class="fa fa-folder"></i> Source Configuration</h3>
+    
+    <dl>
+        <dt>Process Docker Containers:</dt>
+        <dd>
+            <select name="SHOULD_PROCESS_CONTAINERS" id="process_containers">
+                <option value="no" <?= $config['SHOULD_PROCESS_CONTAINERS'] == 'no' ? 'selected' : '' ?>>No</option>
+                <option value="yes" <?= $config['SHOULD_PROCESS_CONTAINERS'] == 'yes' ? 'selected' : '' ?>>Yes</option>
+            </select>
+            <span class="text-muted">Convert Docker appdata folders to datasets</span>
+        </dd>
+    </dl>
+    
+    <div id="container_settings" style="margin-left: 20px; border-left: 3px solid #007bff; padding-left: 15px;">
+        <dl>
+            <dt>Appdata Pool:</dt>
+            <dd><input type="text" name="SOURCE_POOL_WHERE_APPDATA_IS" value="<?= htmlspecialchars($config['SOURCE_POOL_WHERE_APPDATA_IS']) ?>" placeholder="e.g., cache"></dd>
+        </dl>
+        <dl>
+            <dt>Appdata Dataset:</dt>
+            <dd><input type="text" name="SOURCE_DATASET_WHERE_APPDATA_IS" value="<?= htmlspecialchars($config['SOURCE_DATASET_WHERE_APPDATA_IS']) ?>" placeholder="e.g., appdata"></dd>
+        </dl>
+    </div>
+    
+    <dl>
+        <dt>Process Virtual Machines:</dt>
+        <dd>
+            <select name="SHOULD_PROCESS_VMS" id="process_vms">
+                <option value="no" <?= $config['SHOULD_PROCESS_VMS'] == 'no' ? 'selected' : '' ?>>No</option>
+                <option value="yes" <?= $config['SHOULD_PROCESS_VMS'] == 'yes' ? 'selected' : '' ?>>Yes</option>
+            </select>
+            <span class="text-muted">Convert VM vdisk folders to datasets</span>
+        </dd>
+    </dl>
+    
+    <div id="vm_settings" style="margin-left: 20px; border-left: 3px solid #007bff; padding-left: 15px;">
+        <dl>
+            <dt>VM Pool:</dt>
+            <dd><input type="text" name="SOURCE_POOL_WHERE_VM_DOMAINS_ARE" value="<?= htmlspecialchars($config['SOURCE_POOL_WHERE_VM_DOMAINS_ARE']) ?>" placeholder="e.g., cache"></dd>
+        </dl>
+        <dl>
+            <dt>VM Dataset:</dt>
+            <dd><input type="text" name="SOURCE_DATASET_WHERE_VM_DOMAINS_ARE" value="<?= htmlspecialchars($config['SOURCE_DATASET_WHERE_VM_DOMAINS_ARE']) ?>" placeholder="e.g., domains"></dd>
+        </dl>
+        <dl>
+            <dt>Force Shutdown Wait:</dt>
+            <dd>
+                <input type="number" name="VM_FORCESHUTDOWN_WAIT" value="<?= htmlspecialchars($config['VM_FORCESHUTDOWN_WAIT']) ?>" min="30" max="300" style="width: 80px;"> seconds
+                <span class="text-muted">Time to wait before force-stopping VMs</span>
+            </dd>
+        </dl>
+    </div>
+    
+    <dl>
+        <dt>Additional Datasets:</dt>
+        <dd>
+            <textarea name="SOURCE_DATASETS" rows="4" cols="50" placeholder="disk12&#10;tank/media&#10;backup/photos"><?= htmlspecialchars($config['SOURCE_DATASETS']) ?></textarea><br>
+            <span class="text-muted">One dataset path per line (e.g., pool/dataset)</span>
+        </dd>
+    </dl>
+</div>
+
+<!-- Notification Settings -->
+<div class="setting-group">
+    <h3><i class="fa fa-bell"></i> Notification Settings</h3>
+    
+    <dl>
+        <dt>Enable Notifications:</dt>
+        <dd>
+            <select name="ENABLE_NOTIFICATIONS" id="enable_notifications">
+                <option value="yes" <?= $config['ENABLE_NOTIFICATIONS'] == 'yes' ? 'selected' : '' ?>>Yes</option>
+                <option value="no" <?= $config['ENABLE_NOTIFICATIONS'] == 'no' ? 'selected' : '' ?>>No</option>
+            </select>
+        </dd>
+    </dl>
+    
+    <div id="notification_details" style="margin-left: 20px;">
+        <table>
+            <tr><td style="width: 200px;">Script Start/Completion:</td><td><select name="NOTIFY_SCRIPT_START"><option value="yes" <?= $config['NOTIFY_SCRIPT_START'] == 'yes' ? 'selected' : '' ?>>Yes</option><option value="no" <?= $config['NOTIFY_SCRIPT_START'] == 'no' ? 'selected' : '' ?>>No</option></select></td></tr>
+            <tr><td>Conversion Summary:</td><td><select name="NOTIFY_CONVERSION_SUMMARY"><option value="yes" <?= $config['NOTIFY_CONVERSION_SUMMARY'] == 'yes' ? 'selected' : '' ?>>Yes</option><option value="no" <?= $config['NOTIFY_CONVERSION_SUMMARY'] == 'no' ? 'selected' : '' ?>>No</option></select></td></tr>
+            <tr><td>Errors & Failures:</td><td><select name="NOTIFY_ERRORS"><option value="yes" <?= $config['NOTIFY_ERRORS'] == 'yes' ? 'selected' : '' ?>>Yes</option><option value="no" <?= $config['NOTIFY_ERRORS'] == 'no' ? 'selected' : '' ?>>No</option></select></td></tr>
+            <tr><td>Warnings:</td><td><select name="NOTIFY_WARNINGS"><option value="yes" <?= $config['NOTIFY_WARNINGS'] == 'yes' ? 'selected' : '' ?>>Yes</option><option value="no" <?= $config['NOTIFY_WARNINGS'] == 'no' ? 'selected' : '' ?>>No</option></select></td></tr>
+            <tr><td>Container/VM Operations:</td><td><select name="NOTIFY_CONTAINER_VM_STOPS"><option value="yes" <?= $config['NOTIFY_CONTAINER_VM_STOPS'] == 'yes' ? 'selected' : '' ?>>Yes</option><option value="no" <?= $config['NOTIFY_CONTAINER_VM_STOPS'] == 'no' ? 'selected' : '' ?>>No</option></select></td></tr>
+            <tr><td>Space Issues:</td><td><select name="NOTIFY_SPACE_ISSUES"><option value="yes" <?= $config['NOTIFY_SPACE_ISSUES'] == 'yes' ? 'selected' : '' ?>>Yes</option><option value="no" <?= $config['NOTIFY_SPACE_ISSUES'] == 'no' ? 'selected' : '' ?>>No</option></select></td></tr>
+            <tr><td>Resume Operations:</td><td><select name="NOTIFY_RESUME_OPERATIONS"><option value="yes" <?= $config['NOTIFY_RESUME_OPERATIONS'] == 'yes' ? 'selected' : '' ?>>Yes</option><option value="no" <?= $config['NOTIFY_RESUME_OPERATIONS'] == 'no' ? 'selected' : '' ?>>No</option></select></td></tr>
+        </table>
+    </div>
+</div>
+
+<!-- Actions -->
+<div class="setting-group">
+    <h3><i class="fa fa-play"></i> Actions</h3>
+    
+    <button type="button" id="start_button" onclick="startConversion()" class="btn btn-primary">
+        <i class="fa fa-play"></i> Start Conversion
+    </button>
+    
+    <button type="button" onclick="scanFolders()" class="btn btn-info" style="margin-left: 10px;">
+        <i class="fa fa-search"></i> Scan for Convertible Folders
+    </button>
+    
+    <button type="button" onclick="saveSettings()" class="btn btn-success" style="margin-left: 10px;">
+        <i class="fa fa-save"></i> Save Settings
+    </button>
+    
+    <div id="scan_results" style="margin-top: 15px; display: none; padding: 10px; background: #f0f0f0; border-radius: 4px;"></div>
+</div>
+
+<!-- Live Log Section -->
+<div id="log_section" class="setting-group" style="display: none;">
+    <h3><i class="fa fa-terminal"></i> Live Conversion Log</h3>
+    <div id="log_content"></div>
+</div>
+
+</form>
