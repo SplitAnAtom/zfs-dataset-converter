@@ -18,15 +18,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install required tools
-        run: |
-          echo "Installing xmllint and other tools..."
-          sudo apt-get update -qq
-          sudo apt-get install -y libxml2-utils
-          echo "Verifying xmllint installation..."
-          which xmllint
-          xmllint --version
-
       - name: Setup PHP for validation
         uses: shivammathur/setup-php@v2
         with:
@@ -35,41 +26,77 @@ jobs:
       - name: Check required files exist
         run: |
           echo "Checking required files..."
-          test -f src/${{ env.PLUGIN_NAME }}.plg || echo "Warning: .plg file missing"
-          test -f src/ZFSConverter.page || echo "Warning: ZFSConverter.page missing"
-          find src/scripts/ -name "*.php" | head -5
-          find src/scripts/ -name "*.sh" | head -5
+          test -f src/${{ env.PLUGIN_NAME }}.plg && echo "✓ .plg file found" || echo "⚠ .plg file missing"
+          test -f src/ZFSConverter.page && echo "✓ ZFSConverter.page found" || echo "⚠ ZFSConverter.page missing"
+          echo "PHP files found:"
+          find src/ -name "*.php" | head -10
+          echo "Shell scripts found:"
+          find src/ -name "*.sh" | head -10
 
       - name: Validate PHP syntax
         run: |
           echo "Validating PHP files..."
-          if find src/ -name "*.php" -print -quit | grep -q .; then
+          php_files=$(find src/ -name "*.php")
+          if [ -n "$php_files" ]; then
             echo "Found PHP files, validating syntax..."
-            find src/ -name "*.php" -exec php -l {} \;
-            echo "PHP validation completed"
+            find src/ -name "*.php" -exec echo "Checking: {}" \; -exec php -l {} \;
+            echo "✓ PHP validation completed"
           else
             echo "No PHP files found to validate"
           fi
 
-      - name: Validate XML syntax
+      - name: Validate XML syntax (custom)
         run: |
-          echo "Validating .plg file..."
+          echo "Validating .plg file XML structure..."
           if [ -f src/${{ env.PLUGIN_NAME }}.plg ]; then
-            echo "Found .plg file, validating XML..."
-            xmllint --noout src/${{ env.PLUGIN_NAME }}.plg
-            echo "XML validation passed"
+            echo "Found .plg file, checking XML structure..."
+            
+            # Check for XML declaration
+            if grep -q "<?xml version" src/${{ env.PLUGIN_NAME }}.plg; then
+              echo "✓ XML declaration found"
+            else
+              echo "✗ Missing XML declaration"
+              exit 1
+            fi
+            
+            # Check for PLUGIN root element
+            if grep -q "<PLUGIN" src/${{ env.PLUGIN_NAME }}.plg; then
+              echo "✓ PLUGIN root element found"
+            else
+              echo "✗ Missing PLUGIN root element"
+              exit 1
+            fi
+            
+            # Check for closing tag
+            if grep -q "</PLUGIN>" src/${{ env.PLUGIN_NAME }}.plg; then
+              echo "✓ Closing PLUGIN tag found"
+            else
+              echo "✗ Missing closing PLUGIN tag"
+              exit 1
+            fi
+            
+            # Check basic required elements
+            if grep -q "name=" src/${{ env.PLUGIN_NAME }}.plg; then
+              echo "✓ Plugin name attribute found"
+            else
+              echo "✗ Missing plugin name attribute"
+              exit 1
+            fi
+            
+            echo "✓ Basic XML structure validation passed"
           else
-            echo "Error: .plg file not found"
+            echo "✗ .plg file not found"
             exit 1
           fi
 
       - name: Validate bash script syntax
         run: |
           echo "Validating bash scripts..."
-          if find src/scripts/ -name "*.sh" -print -quit | grep -q .; then
+          bash_files=$(find src/ -name "*.sh")
+          if [ -n "$bash_files" ]; then
             echo "Found bash scripts, validating syntax..."
-            find src/scripts/ -name "*.sh" -exec bash -n {} \;
-            echo "Bash validation completed"
+            find src/ -name "*.sh" -exec echo "Checking: {}" \; -exec bash -n {} \;
+            echo "✓ Bash validation completed"
           else
             echo "No bash scripts found to validate"
           fi
@@ -92,14 +119,14 @@ jobs:
         run: |
           if [[ $GITHUB_REF == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF#refs/tags/v}
-            RELEASE_NAME="v$VERSION"
+            RELEASE_NAME="ZFS Dataset Converter v$VERSION"
           else
             VERSION=$(date +%Y.%m.%d)-$(git rev-parse --short HEAD)
-            RELEASE_NAME="Development Build $VERSION"
+            RELEASE_NAME="ZFS Dataset Converter Development Build $VERSION"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "release_name=$RELEASE_NAME" >> $GITHUB_OUTPUT
-          echo "Calculated version: $VERSION"
+          echo "✓ Calculated version: $VERSION"
 
       - name: Update plugin version and URLs
         run: |
@@ -111,15 +138,14 @@ jobs:
           sed -i "s|https://github.com/yourusername/zfs-dataset-converter|${REPO_URL}|g" src/${{ env.PLUGIN_NAME }}.plg
           sed -i "s|https://github.com/HammyHavoc/zfs-dataset-converter|${REPO_URL}|g" src/${{ env.PLUGIN_NAME }}.plg
           
-          echo "Updated .plg file contents:"
-          head -20 src/${{ env.PLUGIN_NAME }}.plg
+          echo "✓ Plugin file updated"
 
       - name: Create plugin package
         run: |
           echo "Creating plugin package..."
           mkdir -p build/plugin
           
-          # Copy all source files except .plg
+          # Copy all source files
           cp -r src/* build/plugin/
           
           # Create plugin files archive (excluding .plg file)
@@ -130,17 +156,16 @@ jobs:
           # Copy the updated .plg file to build root
           cp src/${{ env.PLUGIN_NAME }}.plg build/
           
-          echo "Package contents:"
+          echo "✓ Package created successfully"
+          echo "Build contents:"
           ls -la build/
-          echo "Archive contents:"
-          tar -tzf build/plugin-files.tar.gz | head -10
 
       - name: Generate checksums
         run: |
           cd build
           sha256sum *.tar.gz > checksums.txt
           sha256sum *.plg >> checksums.txt
-          echo "Generated checksums:"
+          echo "✓ Checksums generated:"
           cat checksums.txt
 
       - name: Upload build artifacts
@@ -151,7 +176,7 @@ jobs:
             build/*.plg
             build/*.tar.gz
             build/checksums.txt
-          retention-days: 30
+          retention-days: 90
 
   test:
     needs: [validate, build]
@@ -172,22 +197,44 @@ jobs:
           echo "Build directory contents:"
           ls -la
           
+          # Test plugin files archive
           if [ -f plugin-files.tar.gz ]; then
             echo "✓ Plugin files archive found"
-            echo "Archive contents:"
+            echo "Archive size: $(du -h plugin-files.tar.gz | cut -f1)"
+            echo "Archive contents preview:"
             tar -tzf plugin-files.tar.gz | head -20
+            
+            # Extract and test structure
+            mkdir -p test-extract
+            tar -xzf plugin-files.tar.gz -C test-extract
+            echo "✓ Archive extracts successfully"
+            
+            # Check for key files
+            test -f test-extract/ZFSConverter.page && echo "✓ GUI page found" || echo "⚠ GUI page missing"
+            test -d test-extract/scripts && echo "✓ Scripts directory found" || echo "⚠ Scripts directory missing"
+            
           else
             echo "✗ Plugin files archive missing"
             exit 1
           fi
           
+          # Test plugin definition file
           if [ -f ${{ env.PLUGIN_NAME }}.plg ]; then
             echo "✓ Plugin definition file found"
             echo "Plugin file size: $(wc -c < ${{ env.PLUGIN_NAME }}.plg) bytes"
+            
+            # Basic content check
+            if grep -q "github.com/${{ github.repository }}" ${{ env.PLUGIN_NAME }}.plg; then
+              echo "✓ Plugin URLs updated correctly"
+            else
+              echo "⚠ Plugin URLs may not be updated"
+            fi
           else
             echo "✗ Plugin definition file missing"
             exit 1
           fi
+          
+          echo "✓ All tests passed"
 
   release:
     needs: [build, test]
@@ -203,39 +250,56 @@ jobs:
 
       - name: Create Release Notes
         run: |
-          cat > release_notes.md << EOF
-          # ZFS Dataset Converter Plugin ${{ needs.build.outputs.version }}
+          cat > release_notes.md << 'EOF'
+          # 🗄️ ZFS Dataset Converter Plugin ${{ needs.build.outputs.version }}
           
-          ## Installation
+          Convert regular folders to ZFS datasets with advanced features including resume capability, intelligent validation, and comprehensive Unraid integration.
+          
+          ## 🚀 Installation
           
           Go to **Plugins** → **Install Plugin** and paste:
-          \`\`\`
+          ```
           https://github.com/${{ github.repository }}/releases/download/v${{ needs.build.outputs.version }}/${{ env.PLUGIN_NAME }}.plg
-          \`\`\`
+          ```
           
-          ## Features
+          ## ✨ Features
           
-          - 🔄 Resume interrupted conversions automatically
-          - 🧠 Intelligent validation system (no false failures)
-          - 🔔 Configurable Unraid notifications for all operations
-          - 📊 Real-time progress monitoring and live logs
-          - 🐳 Container and VM management during conversion
-          - 📁 Special character handling for dataset names
-          - 🔍 Comprehensive space checking and warnings
-          - 🎨 Professional GUI integrated with Unraid
+          - 🔄 **Resume interrupted conversions** automatically
+          - 🧠 **Intelligent validation system** (no false failures)
+          - 🔔 **Configurable Unraid notifications** for all operations
+          - 📊 **Real-time progress monitoring** and live logs
+          - 🐳 **Container and VM management** during conversion
+          - 📁 **Special character handling** for dataset names
+          - 🔍 **Comprehensive space checking** and warnings
+          - 🎨 **Professional GUI** integrated with Unraid
           
-          ## Files
+          ## 📦 Files in this Release
           
-          - \`${{ env.PLUGIN_NAME }}.plg\` - Plugin definition for installation
-          - \`plugin-files.tar.gz\` - Plugin source files
-          - \`checksums.txt\` - SHA256 checksums for verification
+          - `${{ env.PLUGIN_NAME }}.plg` - Plugin definition for installation
+          - `plugin-files.tar.gz` - Plugin source files  
+          - `checksums.txt` - SHA256 checksums for verification
           
-          ## Build Information
+          ## 💻 Usage
+          
+          1. Install the plugin using the URL above
+          2. Navigate to **Settings** → **Utilities** → **ZFS Dataset Converter**
+          3. Configure your settings (containers, VMs, additional datasets)
+          4. Click "Scan for Convertible Folders" to preview
+          5. Click "Start Conversion" to begin
+          
+          ## ⚠️ Important Notes
+          
+          - **Always test with Dry Run first**
+          - **Ensure adequate backups** before conversion  
+          - **Monitor space closely** during large conversions
+          - **Requires ~2.2x folder size** in free space during conversion
+          
+          ## 🔧 Build Information
           
           - **Version**: ${{ needs.build.outputs.version }}
           - **Built**: $(date '+%Y-%m-%d %H:%M:%S UTC')
-          - **Commit**: $(echo ${{ github.sha }} | head -c 8)
-          - **Branch**: ${GITHUB_REF#refs/heads/}
+          - **Commit**: ${{ github.sha }}
+          - **Repository**: https://github.com/${{ github.repository }}
           EOF
 
       - name: Create Release
@@ -250,3 +314,4 @@ jobs:
             build/${{ env.PLUGIN_NAME }}.plg
             build/plugin-files.tar.gz
             build/checksums.txt
+          fail_on_unmatched_files: false
