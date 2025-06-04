@@ -20,8 +20,12 @@ jobs:
 
       - name: Install required tools
         run: |
-          sudo apt-get update
+          echo "Installing xmllint and other tools..."
+          sudo apt-get update -qq
           sudo apt-get install -y libxml2-utils
+          echo "Verifying xmllint installation..."
+          which xmllint
+          xmllint --version
 
       - name: Setup PHP for validation
         uses: shivammathur/setup-php@v2
@@ -39,8 +43,10 @@ jobs:
       - name: Validate PHP syntax
         run: |
           echo "Validating PHP files..."
-          if find src/ -name "*.php" | grep -q .; then
+          if find src/ -name "*.php" -print -quit | grep -q .; then
+            echo "Found PHP files, validating syntax..."
             find src/ -name "*.php" -exec php -l {} \;
+            echo "PHP validation completed"
           else
             echo "No PHP files found to validate"
           fi
@@ -49,6 +55,7 @@ jobs:
         run: |
           echo "Validating .plg file..."
           if [ -f src/${{ env.PLUGIN_NAME }}.plg ]; then
+            echo "Found .plg file, validating XML..."
             xmllint --noout src/${{ env.PLUGIN_NAME }}.plg
             echo "XML validation passed"
           else
@@ -59,9 +66,10 @@ jobs:
       - name: Validate bash script syntax
         run: |
           echo "Validating bash scripts..."
-          if find src/scripts/ -name "*.sh" | grep -q .; then
+          if find src/scripts/ -name "*.sh" -print -quit | grep -q .; then
+            echo "Found bash scripts, validating syntax..."
             find src/scripts/ -name "*.sh" -exec bash -n {} \;
-            echo "Bash validation passed"
+            echo "Bash validation completed"
           else
             echo "No bash scripts found to validate"
           fi
@@ -71,6 +79,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      release_name: ${{ steps.version.outputs.release_name }}
     
     steps:
       - name: Checkout code
@@ -92,25 +101,39 @@ jobs:
           echo "release_name=$RELEASE_NAME" >> $GITHUB_OUTPUT
           echo "Calculated version: $VERSION"
 
-      - name: Update plugin version
+      - name: Update plugin version and URLs
         run: |
+          echo "Updating plugin version to ${{ steps.version.outputs.version }}"
           sed -i 's/version="[^"]*"/version="${{ steps.version.outputs.version }}"/' src/${{ env.PLUGIN_NAME }}.plg
+          
+          echo "Updating repository URLs..."
           REPO_URL="https://github.com/${{ github.repository }}"
           sed -i "s|https://github.com/yourusername/zfs-dataset-converter|${REPO_URL}|g" src/${{ env.PLUGIN_NAME }}.plg
           sed -i "s|https://github.com/HammyHavoc/zfs-dataset-converter|${REPO_URL}|g" src/${{ env.PLUGIN_NAME }}.plg
+          
+          echo "Updated .plg file contents:"
+          head -20 src/${{ env.PLUGIN_NAME }}.plg
 
       - name: Create plugin package
         run: |
           echo "Creating plugin package..."
           mkdir -p build/plugin
+          
+          # Copy all source files except .plg
           cp -r src/* build/plugin/
+          
+          # Create plugin files archive (excluding .plg file)
           cd build/plugin
           tar -czf ../plugin-files.tar.gz --exclude="*.plg" .
           cd ../..
+          
+          # Copy the updated .plg file to build root
           cp src/${{ env.PLUGIN_NAME }}.plg build/
           
           echo "Package contents:"
           ls -la build/
+          echo "Archive contents:"
+          tar -tzf build/plugin-files.tar.gz | head -10
 
       - name: Generate checksums
         run: |
@@ -146,9 +169,13 @@ jobs:
           echo "Testing plugin package structure..."
           cd build
           
+          echo "Build directory contents:"
+          ls -la
+          
           if [ -f plugin-files.tar.gz ]; then
             echo "✓ Plugin files archive found"
-            tar -tzf plugin-files.tar.gz | head -10
+            echo "Archive contents:"
+            tar -tzf plugin-files.tar.gz | head -20
           else
             echo "✗ Plugin files archive missing"
             exit 1
@@ -156,6 +183,7 @@ jobs:
           
           if [ -f ${{ env.PLUGIN_NAME }}.plg ]; then
             echo "✓ Plugin definition file found"
+            echo "Plugin file size: $(wc -c < ${{ env.PLUGIN_NAME }}.plg) bytes"
           else
             echo "✗ Plugin definition file missing"
             exit 1
@@ -187,13 +215,14 @@ jobs:
           
           ## Features
           
-          - Resume interrupted conversions automatically
-          - Intelligent validation system (no false failures)
-          - Configurable Unraid notifications for all operations
-          - Real-time progress monitoring and live logs
-          - Container and VM management during conversion
-          - Special character handling for dataset names
-          - Comprehensive space checking and warnings
+          - 🔄 Resume interrupted conversions automatically
+          - 🧠 Intelligent validation system (no false failures)
+          - 🔔 Configurable Unraid notifications for all operations
+          - 📊 Real-time progress monitoring and live logs
+          - 🐳 Container and VM management during conversion
+          - 📁 Special character handling for dataset names
+          - 🔍 Comprehensive space checking and warnings
+          - 🎨 Professional GUI integrated with Unraid
           
           ## Files
           
@@ -206,6 +235,7 @@ jobs:
           - **Version**: ${{ needs.build.outputs.version }}
           - **Built**: $(date '+%Y-%m-%d %H:%M:%S UTC')
           - **Commit**: $(echo ${{ github.sha }} | head -c 8)
+          - **Branch**: ${GITHUB_REF#refs/heads/}
           EOF
 
       - name: Create Release
