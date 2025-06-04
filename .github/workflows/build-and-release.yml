@@ -23,6 +23,11 @@ jobs:
         with:
           php-version: '8.1'
 
+      - name: Install XML validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils
+
       - name: Check required files exist
         run: |
           echo "Checking required files..."
@@ -45,13 +50,15 @@ jobs:
             echo "No PHP files found to validate"
           fi
 
-      - name: Validate XML syntax (custom)
+      - name: Validate XML syntax
         run: |
           echo "Validating .plg file XML structure..."
           if [ -f src/${{ env.PLUGIN_NAME }}.plg ]; then
-            echo "Found .plg file, checking XML structure..."
+            echo "Found .plg file, checking XML structure with xmllint..."
+            xmllint --noout src/${{ env.PLUGIN_NAME }}.plg
+            echo "✓ XML validation passed"
             
-            # Check for XML declaration
+            # Additional structural checks
             if grep -q "<?xml version" src/${{ env.PLUGIN_NAME }}.plg; then
               echo "✓ XML declaration found"
             else
@@ -59,7 +66,6 @@ jobs:
               exit 1
             fi
             
-            # Check for PLUGIN root element
             if grep -q "<PLUGIN" src/${{ env.PLUGIN_NAME }}.plg; then
               echo "✓ PLUGIN root element found"
             else
@@ -67,7 +73,6 @@ jobs:
               exit 1
             fi
             
-            # Check for closing tag
             if grep -q "</PLUGIN>" src/${{ env.PLUGIN_NAME }}.plg; then
               echo "✓ Closing PLUGIN tag found"
             else
@@ -75,15 +80,12 @@ jobs:
               exit 1
             fi
             
-            # Check basic required elements
             if grep -q "name=" src/${{ env.PLUGIN_NAME }}.plg; then
               echo "✓ Plugin name attribute found"
             else
               echo "✗ Missing plugin name attribute"
               exit 1
             fi
-            
-            echo "✓ Basic XML structure validation passed"
           else
             echo "✗ .plg file not found"
             exit 1
@@ -137,6 +139,7 @@ jobs:
           REPO_URL="https://github.com/${{ github.repository }}"
           sed -i "s|https://github.com/yourusername/zfs-dataset-converter|${REPO_URL}|g" src/${{ env.PLUGIN_NAME }}.plg
           sed -i "s|https://github.com/HammyHavoc/zfs-dataset-converter|${REPO_URL}|g" src/${{ env.PLUGIN_NAME }}.plg
+          sed -i "s|https://github.com/SplitAnAtom/zfs-dataset-converter|${REPO_URL}|g" src/${{ env.PLUGIN_NAME }}.plg
           
           echo "✓ Plugin file updated"
 
@@ -300,6 +303,8 @@ jobs:
           - **Built**: $(date '+%Y-%m-%d %H:%M:%S UTC')
           - **Commit**: ${{ github.sha }}
           - **Repository**: https://github.com/${{ github.repository }}
+          
+          **Copyright 2025, Split An Atom**
           EOF
 
       - name: Create Release
