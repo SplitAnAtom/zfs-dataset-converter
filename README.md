@@ -112,7 +112,7 @@ Convert regular folders to ZFS datasets with advanced features including resume 
 
 ## 📋 Requirements
 
-- **Unraid 6.12+** (for ZFS support)
+- **Unraid OS 6.12+** (for ZFS support)
 - **ZFS pools/datasets** already configured
 - **Sufficient free space** (~2.2x folder size during conversion)
 - **Root access** for container/VM management
